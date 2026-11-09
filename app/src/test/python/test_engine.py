@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import zipfile
 
-from antivirus.scanner import engine_self_check, inspect_file
+from antivirus.scanner import engine_self_check, inspect_file, scan_local_file, scan_history_report
 from antivirus.updater import validate_manifest, verify_signed_envelope, install_verified_manifest
 from antivirus.database import connect
 
@@ -71,6 +71,19 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(result["apk_review"]["review_indicators"], [])
         finally:
             os.unlink(path)
+
+    def test_scan_history_records_display_name_and_result(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sample_path = os.path.join(folder, "temporary-copy.bin")
+            db_path = os.path.join(folder, "signatures.db")
+            with open(sample_path, "wb") as stream:
+                stream.write(b"history sample")
+            report = scan_local_file(sample_path, db_path, "Original document.pdf")
+            self.assertIn("No local signature match", report)
+            history = scan_history_report(db_path)
+            self.assertIn("Original document.pdf", history)
+            self.assertIn("NO_MATCH", history)
+            self.assertNotIn("temporary-copy.bin", history)
 
     def test_unsigned_update_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "public key"):

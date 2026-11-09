@@ -88,6 +88,7 @@ class MainActivity : Activity() {
         content.addView(status, matchWrap())
         addButton(content, "SCAN FILE / APK") { chooseFile() }
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
+        addButton(content, "SCAN HISTORY") { showScanHistory() }
         addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
         addButton(content, "ANALYZE STORAGE / JUNK") { chooseStorageFolder() }
         addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
@@ -219,7 +220,7 @@ class MainActivity : Activity() {
                     contentResolver.openInputStream(uri)?.use { input ->
                         temp.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw IllegalStateException("Cannot open selected document")
-                    val result = python.callAttr("scan_local_file", temp.absolutePath, File(filesDir, "signatures.db").absolutePath).toString()
+                    val result = python.callAttr("scan_local_file", temp.absolutePath, File(filesDir, "signatures.db").absolutePath, name).toString()
                     val apkReview = if (name.endsWith(".apk", ignoreCase = true)) inspectApkPermissions(temp) else ""
                     if (result.startsWith("THREAT MATCH:")) {
                         threats++
@@ -930,6 +931,25 @@ class MainActivity : Activity() {
                     "A permission can be legitimate for an app's function; this report is a privacy review, not a malware verdict. " +
                     "Scope: launcher-visible apps only; hidden/system packages may be omitted."
                 )
+            }
+        }
+    }
+
+    private fun showScanHistory() {
+        status.text = "Loading recent scan history…"
+        worker.execute {
+            try {
+                val report = Python.getInstance().getModule("antivirus.scanner")
+                    .callAttr("scan_history_report", File(filesDir, "signatures.db").absolutePath, 50)
+                    .toString()
+                runOnUiThread {
+                    status.text = report + "\\n\\nHistory is stored locally in the app database. It records scan status and a short SHA-256 prefix; it does not mean a no-match file is guaranteed safe."
+                    scanCount.text = "Recent scan history"
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    status.text = "Could not load scan history: " + (error.localizedMessage ?: "unknown error")
+                }
             }
         }
     }

@@ -5,7 +5,8 @@ import unittest
 import zipfile
 
 from antivirus.scanner import engine_self_check, inspect_file
-from antivirus.updater import validate_manifest, verify_signed_envelope, install_verified_manifest\nfrom antivirus.database import connect
+from antivirus.updater import validate_manifest, verify_signed_envelope, install_verified_manifest
+from antivirus.database import connect
 
 
 class EngineTests(unittest.TestCase):

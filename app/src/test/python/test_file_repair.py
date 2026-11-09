@@ -101,12 +101,12 @@ class FileRepairTests(unittest.TestCase):
     def test_pdf_repair_writes_real_line_breaks(self):
         source = os.path.join(self.root, "linebreak.pdf")
         with open(source, "wb") as stream:
-            stream.write(b"%PDF-1.4\\nbody")
+            stream.write(b"%PDF-1.4\nbody")
         result = repair_file(source, os.path.join(self.root, "out"))
         with open(result["output_path"], "rb") as stream:
             repaired = stream.read()
-        self.assertTrue(repaired.endswith(b"\\n%%EOF\\n"))
-        self.assertNotIn(b"\\\\n%%EOF", repaired)
+        self.assertTrue(repaired.endswith(b"\n%%EOF\n"))
+        self.assertNotIn(b"\\n%%EOF", repaired)
 
 
 if __name__ == "__main__":

@@ -85,6 +85,39 @@ class EngineTests(unittest.TestCase):
             self.assertIn("NO_MATCH", history)
             self.assertNotIn("temporary-copy.bin", history)
 
+    def test_clear_scan_history_preserves_signatures_and_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = os.path.join(folder, "signatures.db")
+            sample_path = os.path.join(folder, "sample.bin")
+            with open(sample_path, "wb") as stream:
+                stream.write(b"clear history test")
+            scan_local_file(sample_path, db_path, "sample.bin")
+            connection = connect(db_path)
+            connection.execute(
+                "INSERT INTO signatures (sha256, label, severity, description, source_version) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (hashlib.sha256(b"known").hexdigest(), "Known", "low", "fixture", 1),
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+                ("signature_db_version", "7"),
+            )
+            connection.commit()
+            connection.close()
+
+            from antivirus.scanner import clear_scan_history_records
+            removed = clear_scan_history_records(db_path)
+            self.assertEqual(removed, 1)
+            self.assertIn("No scan history yet", scan_history_report(db_path))
+
+            connection = connect(db_path)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM signatures").fetchone()[0], 1)
+            self.assertEqual(
+                connection.execute("SELECT value FROM metadata WHERE key='signature_db_version'").fetchone()[0],
+                "7",
+            )
+            connection.close()
+
     def test_unsigned_update_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "public key"):
             verify_signed_envelope({"manifest": {}, "signature": ""}, "")

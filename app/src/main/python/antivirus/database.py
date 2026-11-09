@@ -47,10 +47,19 @@ def load_signatures(connection: sqlite3.Connection) -> dict[str, dict]:
     }
 
 
+MAX_SCAN_HISTORY_RECORDS = 1000
+
+
 def record_scan(connection: sqlite3.Connection, path: str, sha256: str | None, status: str) -> None:
     connection.execute(
         "INSERT INTO scan_history (path, sha256, status) VALUES (?, ?, ?)",
         (str(path), sha256, str(status)),
+    )
+    # Keep the newest records only, so repeated scans cannot grow this table forever.
+    connection.execute(
+        "DELETE FROM scan_history WHERE id NOT IN "
+        "(SELECT id FROM scan_history ORDER BY id DESC LIMIT ?)",
+        (MAX_SCAN_HISTORY_RECORDS,),
     )
     connection.commit()
 

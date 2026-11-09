@@ -75,6 +75,7 @@ class MainActivity : Activity() {
         content.addView(status, matchWrap())
         addButton(content, "SCAN FILE / APK") { chooseFile() }
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
+        addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") {
@@ -326,6 +327,61 @@ class MainActivity : Activity() {
                 }
             }
         return null
+    }
+
+
+    @Suppress("DEPRECATION")
+    private fun scanInstalledApps() {
+        status.text = "Checking installed apps visible in the launcher…"
+        scanCount.text = "Installed app scan running…"
+        worker.execute {
+            val report = mutableListOf<String>()
+            var checked = 0
+            var flagged = 0
+            val watchlist = mapOf(
+                "android.permission.READ_SMS" to "READ_SMS",
+                "android.permission.RECEIVE_SMS" to "RECEIVE_SMS",
+                "android.permission.SEND_SMS" to "SEND_SMS",
+                "android.permission.READ_CONTACTS" to "READ_CONTACTS",
+                "android.permission.READ_CALL_LOG" to "READ_CALL_LOG",
+                "android.permission.RECORD_AUDIO" to "RECORD_AUDIO",
+                "android.permission.CAMERA" to "CAMERA",
+                "android.permission.ACCESS_FINE_LOCATION" to "FINE_LOCATION",
+                "android.permission.ACCESS_BACKGROUND_LOCATION" to "BACKGROUND_LOCATION",
+                "android.permission.REQUEST_INSTALL_PACKAGES" to "INSTALL_PACKAGES",
+                "android.permission.SYSTEM_ALERT_WINDOW" to "OVERLAY",
+                "android.permission.READ_PHONE_STATE" to "PHONE_STATE"
+            )
+            try {
+                val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val launchables = packageManager.queryIntentActivities(launcherIntent, 0)
+                val packageNames = launchables.mapNotNull { it.activityInfo?.packageName }.distinct()
+                packageNames.forEach { packageName ->
+                    try {
+                        val packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
+                        val permissions = packageInfo.requestedPermissions?.toSet().orEmpty()
+                        val sensitive = permissions.mapNotNull { watchlist[it] }
+                        val label = packageInfo.applicationInfo?.loadLabel(packageManager)?.toString() ?: packageName
+                        checked++
+                        if (sensitive.isNotEmpty()) flagged++
+                        report.add(label + " (" + packageName + ")\n" +
+                            if (sensitive.isEmpty()) "No watchlist permissions declared."
+                            else "Sensitive permissions declared: " + sensitive.joinToString(", "))
+                    } catch (error: Exception) {
+                        report.add(packageName + ": unable to inspect (" + (error.localizedMessage ?: "unknown") + ")")
+                    }
+                }
+            } catch (error: Exception) {
+                report.add("Installed-app query failed: " + (error.localizedMessage ?: "unknown error"))
+            }
+            val summary = report.take(35).joinToString("\n\n")
+            runOnUiThread {
+                scanCount.text = checked.toString() + " launcher apps checked • " + flagged + " with watchlist permissions"
+                status.text = "INSTALLED APP REVIEW\n\n" + summary +
+                    if (report.size > 35) "\n\n…and " + (report.size - 35) + " more apps." else ""
+                status.append("\n\nScope: apps with launcher icons visible to this app. Hidden/system packages may not be included. Permission presence is not proof of malware.")
+            }
+        }
     }
 
     private fun runSelfCheck() {

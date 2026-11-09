@@ -118,6 +118,16 @@ class MainActivity : Activity() {
         }
     }
 
+    @Deprecated("Uses the platform permission callback for broad Android compatibility")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 4201) showPermissionSetup()
+    }
+
     private fun addButton(parent: LinearLayout, label: String, action: () -> Unit) {
         parent.addView(Button(this).apply {
             text = label

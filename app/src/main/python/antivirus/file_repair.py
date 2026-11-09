@@ -44,7 +44,7 @@ def inspect_file(path: str) -> dict:
         repairable = True
         if b"%%EOF" not in tail:
             notes.append("PDF end marker is missing; a copy can be tested with a restored marker.")
-    elif head.startswith(b"PK\\x03\\x04") or head.startswith(b"PK\\x05\\x06") or suffix in (".docx", ".xlsx", ".pptx", ".zip", ".apk"):
+    elif head.startswith(b"PK\x03\x04") or head.startswith(b"PK\x05\x06") or suffix in (".docx", ".xlsx", ".pptx", ".zip", ".apk"):
         kind = "ZIP-based container"
         repairable = True
         try:
@@ -56,7 +56,7 @@ def inspect_file(path: str) -> dict:
                     notes.append("ZIP directory and entry CRC checks passed.")
         except (OSError, zipfile.BadZipFile) as exc:
             notes.append("ZIP structure could not be fully read: " + str(exc))
-    elif head.startswith(b"SQLite format 3\\x00") or suffix in (".sqlite", ".sqlite3", ".db"):
+    elif head.startswith(b"SQLite format 3\x00") or suffix in (".sqlite", ".sqlite3", ".db"):
         kind = "SQLite database"
         repairable = True
         try:
@@ -68,17 +68,17 @@ def inspect_file(path: str) -> dict:
                 db.close()
         except sqlite3.DatabaseError as exc:
             notes.append("SQLite integrity check failed: " + str(exc))
-    elif head.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    elif head.startswith(b"\x89PNG\r\n\x1a\n"):
         kind = "PNG image"
         notes.append("PNG signature found. Full pixel recovery needs an image decoder.")
-    elif head.startswith(b"\\xff\\xd8\\xff"):
+    elif head.startswith(b"\xff\xd8\xff"):
         kind = "JPEG image"
         notes.append("JPEG signature found. Entropy-coded image data is not rewritten by this safe mode.")
     elif head.startswith(b"RIFF") and head[8:12] == b"WEBP":
         kind = "WebP image"
     elif head.startswith(b"ID3") or (len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0):
         kind = "MP3 audio"
-    elif head.startswith(b"\\x00\\x00\\x00") and b"ftyp" in head:
+    elif head.startswith(b"\x00\x00\x00") and b"ftyp" in head:
         kind = "MP4/ISO media"
     elif suffix == ".json":
         kind = "JSON text"
@@ -161,7 +161,7 @@ def repair_file(source_path: str, output_dir: str) -> dict:
             # This restores only the terminal marker, not missing PDF structures.
             with source.open("rb") as original, target.open("wb") as repaired:
                 shutil.copyfileobj(original, repaired, length=1024 * 1024)
-                repaired.write(b"\\n%%EOF\\n")
+                repaired.write(b"\n%%EOF\n")
             action = "terminal_marker_restored"
             details.append("Added a missing terminal EOF marker only; page contents were not reconstructed.")
         else:

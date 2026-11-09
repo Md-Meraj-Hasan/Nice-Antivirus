@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.ActivityManager
 import android.app.AppOpsManager
+import android.app.usage.UsageStatsManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -87,6 +88,7 @@ class MainActivity : Activity() {
         addButton(content, "PERFORMANCE ASSIST") { runPerformanceAssist() }
         addButton(content, "BACKGROUND APP MANAGER") { showBackgroundAppManager() }
         addButton(content, "PERMISSION SETUP") { showPermissionSetup() }
+        addButton(content, "APP ACTIVITY MONITOR") { showAppActivityMonitor() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
@@ -253,6 +255,75 @@ class MainActivity : Activity() {
             mode == AppOpsManager.MODE_ALLOWED
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun showAppActivityMonitor() {
+        if (!hasUsageAccess()) {
+            AlertDialog.Builder(this)
+                .setTitle("Usage Access required")
+                .setMessage("Allow Usage Access for Nice Antivirus in Android Settings. This lets the app review recent app-usage records; it does not reveal downloads or prove an app is safe or harmful.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Open Settings") { _, _ ->
+                    try {
+                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                    }
+                }
+                .show()
+            return
+        }
+
+        status.text = "Reading recent app-usage records…"
+        scanCount.text = "App activity review running…"
+        worker.execute {
+            try {
+                val usageManager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
+                val end = System.currentTimeMillis()
+                val start = end - 24L * 60L * 60L * 1000L
+                val records = usageManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
+                    .orEmpty()
+                    .filter { it.packageName != packageName && it.totalTimeInForeground > 0L }
+                    .groupBy { it.packageName }
+                    .map { entry ->
+                        val latest = entry.value.maxOfOrNull { it.lastTimeUsed } ?: 0L
+                        val foreground = entry.value.sumOf { it.totalTimeInForeground }
+                        Triple(entry.key, latest, foreground)
+                    }
+                    .sortedByDescending { it.second }
+                    .take(40)
+
+                val report = if (records.isEmpty()) {
+                    "No app-usage records were returned for the last 24 hours. Check Usage Access and use the phone normally, then try again."
+                } else {
+                    records.joinToString("\\n\\n") { item ->
+                        val label = try {
+                            val app = if (Build.VERSION.SDK_INT >= 33) {
+                                packageManager.getApplicationInfo(item.first, PackageManager.ApplicationInfoFlags.of(0))
+                            } else {
+                                @Suppress("DEPRECATION")
+                                packageManager.getApplicationInfo(item.first, 0)
+                            }
+                            packageManager.getApplicationLabel(app).toString()
+                        } catch (_: Exception) { item.first }
+                        val minutes = item.third / 60000L
+                        val last = if (item.second > 0L) java.text.DateFormat.getDateTimeInstance().format(java.util.Date(item.second)) else "Unknown"
+                        "$label\\nPackage: ${item.first}\\nForeground use: ${minutes} min\\nLast used: $last"
+                    }
+                }
+                runOnUiThread {
+                    scanCount.text = records.size.toString() + " apps with usage records • last 24 hours"
+                    status.text = "APP ACTIVITY MONITOR • LAST 24 HOURS\\n\\n" + report +
+                        "\\n\\nImportant: usage history is not a live running-process list. It cannot identify downloads, uploads or background work, and it must never be used alone to force-stop an app."
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    status.text = "App activity review failed: " + (error.localizedMessage ?: "unknown error") +
+                        "\\nCheck Usage Access in Permission Setup."
+                    scanCount.text = "Activity review unavailable"
+                }
+            }
         }
     }
 

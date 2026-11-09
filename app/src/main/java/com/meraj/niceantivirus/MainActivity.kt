@@ -955,7 +955,7 @@ class MainActivity : Activity() {
                 done = index + 1
                 val currentDone = done
                 val currentThreats = threats
-                val currentLocation = if (uri.scheme == "file") uri.path ?: name else name
+                val currentLocation = if (uri.scheme == "file") uri.path ?: uri.toString() else queryDisplayName(uri) ?: uri.toString()
                 runOnUiThread {
                     updateScanProgress(total, currentDone, currentThreats)
                     // The progress panel already shows totals; keep this line for the

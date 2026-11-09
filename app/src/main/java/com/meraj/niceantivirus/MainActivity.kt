@@ -82,6 +82,7 @@ class MainActivity : Activity() {
         addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
         addButton(content, "ANALYZE STORAGE / JUNK") { chooseStorageFolder() }
         addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
+        addButton(content, "PERFORMANCE ASSIST") { runPerformanceAssist() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
@@ -234,6 +235,87 @@ class MainActivity : Activity() {
     }
 
 
+
+    private fun runPerformanceAssist() {
+        status.text = "Checking device performance…"
+        scanCount.text = "Performance diagnostics running…"
+        worker.execute {
+            try {
+                val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+                val memory = ActivityManager.MemoryInfo()
+                activityManager.getMemoryInfo(memory)
+                val dataStat = StatFs(android.os.Environment.getDataDirectory().absolutePath)
+                val freeBytes = dataStat.availableBytes
+                val totalBytes = dataStat.totalBytes
+                val freePercent = if (totalBytes > 0L) (freeBytes * 100.0 / totalBytes) else 0.0
+                val cacheBytes = directorySize(cacheDir) + (externalCacheDir?.let { directorySize(it) } ?: 0L)
+                val thermal = if (Build.VERSION.SDK_INT >= 29) {
+                    val power = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                    when (power.currentThermalStatus) {
+                        android.os.PowerManager.THERMAL_STATUS_NONE -> "Normal"
+                        android.os.PowerManager.THERMAL_STATUS_LIGHT -> "Light"
+                        android.os.PowerManager.THERMAL_STATUS_MODERATE -> "Moderate"
+                        android.os.PowerManager.THERMAL_STATUS_SEVERE -> "Severe"
+                        android.os.PowerManager.THERMAL_STATUS_CRITICAL -> "Critical"
+                        android.os.PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergency"
+                        android.os.PowerManager.THERMAL_STATUS_SHUTDOWN -> "Shutdown risk"
+                        else -> "Unknown"
+                    }
+                } else "Not available on this Android version"
+                val advice = mutableListOf<String>()
+                if (memory.lowMemory || memory.availMem < 200L * 1024L * 1024L) advice.add("RAM is low: close unused apps using Android Recent Apps; avoid running many heavy apps together.")
+                if (freePercent < 10.0) advice.add("Storage is critically low: review large downloads/photos and uninstall apps you no longer use.")
+                else if (freePercent < 20.0) advice.add("Storage is getting low: keep more free space for smooth app updates and temporary files.")
+                if (thermal == "Severe" || thermal == "Critical" || thermal == "Emergency" || thermal == "Shutdown risk") advice.add("Device is hot: stop heavy tasks, unplug charging if safe, and let it cool in a ventilated place.")
+                if (advice.isEmpty()) advice.add("No major low-memory, low-storage or thermal warning was reported by Android. Slowness can still be caused by a specific app, old hardware or background activity.")
+                val report = "PERFORMANCE CHECK\\n\\n" +
+                    "Available RAM: " + Formatter.formatFileSize(this, memory.availMem) + " / " + Formatter.formatFileSize(this, memory.totalMem) + "\\n" +
+                    "System low-memory flag: " + memory.lowMemory + "\\n" +
+                    "Free internal storage: " + Formatter.formatFileSize(this, freeBytes) + " (" + String.format(java.util.Locale.US, "%.1f", freePercent) + "%)\\n" +
+                    "Nice Antivirus temporary cache: " + Formatter.formatFileSize(this, cacheBytes) + "\\n" +
+                    "Device thermal status: " + thermal + "\\n\\nRECOMMENDATIONS\\n• " + advice.joinToString("\\n• ") +
+                    "\\n\\nOnly Nice Antivirus temporary cache can be cleared here. Other apps data/cache and system processes are not touched."
+                runOnUiThread {
+                    status.text = report
+                    scanCount.text = "Performance check complete"
+                    AlertDialog.Builder(this)
+                        .setTitle("Performance check complete")
+                        .setMessage("Nice Antivirus temporary cache: " + Formatter.formatFileSize(this, cacheBytes) + ". Clear only these temporary files? Your scans, quarantine, signatures and personal files will be kept.")
+                        .setNegativeButton("Keep cache", null)
+                        .setPositiveButton("Clear app temp cache") { _, _ -> clearOwnTemporaryCache() }
+                        .show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { status.text = "Performance check failed: " + (error.localizedMessage ?: "unknown error") }
+            }
+        }
+    }
+
+    private fun directorySize(directory: File): Long {
+        if (!directory.exists()) return 0L
+        if (directory.isFile) return directory.length()
+        return directory.listFiles()?.sumOf { child -> directorySize(child) } ?: 0L
+    }
+
+    private fun clearOwnTemporaryCache() {
+        worker.execute {
+            var removed = 0L
+            fun clearChildren(directory: File?) {
+                if (directory == null || !directory.exists()) return
+                directory.listFiles()?.forEach { child ->
+                    if (child.isDirectory) clearChildren(child)
+                    val size = if (child.isFile) child.length() else 0L
+                    if (child.delete()) removed += size
+                }
+            }
+            clearChildren(cacheDir)
+            clearChildren(externalCacheDir)
+            runOnUiThread {
+                status.text = "PERFORMANCE CLEANUP COMPLETE\\n\\nRemoved " + Formatter.formatFileSize(this, removed) + " from Nice Antivirus temporary cache only. Your personal files, quarantine, signature database and other apps were not changed."
+                scanCount.text = "App temporary cache cleaned"
+            }
+        }
+    }
 
     private fun chooseStorageFolder() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), storageRequest)

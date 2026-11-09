@@ -1,6 +1,7 @@
 package com.meraj.niceantivirus
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -25,6 +26,8 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val pickFileRequest = 4101
     private val pickFolderRequest = 4102
+    private val restoreRequest = 4103
+    private var restoreFile: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,6 +76,7 @@ class MainActivity : Activity() {
         addButton(content, "SCAN FILE / APK") { chooseFile() }
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
+        addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") {
             status.text = "Updater framework is available. Live updates are not enabled until the trusted publisher key and official HTTPS manifest URL are configured."
         }
@@ -116,6 +120,21 @@ class MainActivity : Activity() {
             scanFolder(uri)
         } else if (requestCode == pickFileRequest) {
             scanUris(listOf(uri))
+        } else if (requestCode == restoreRequest) {
+            val source = restoreFile
+            restoreFile = null
+            if (source != null && source.exists()) {
+                worker.execute {
+                    try {
+                        contentResolver.openOutputStream(uri, "w")?.use { output ->
+                            source.inputStream().use { input -> input.copyTo(output) }
+                        } ?: throw IllegalStateException("Cannot create destination file")
+                        runOnUiThread { status.text = "Restored a copy of " + source.name + ". Quarantine copy was kept." }
+                    } catch (error: Exception) {
+                        runOnUiThread { status.text = "Restore failed: " + (error.localizedMessage ?: "unknown error") }
+                    }
+                }
+            }
         }
     }
 
@@ -143,6 +162,7 @@ class MainActivity : Activity() {
         }
         worker.execute {
             val results = mutableListOf<String>()
+            val detectedTemps = mutableListOf<Pair<String, File>>()
             var threats = 0
             val python = Python.getInstance().getModule("antivirus.scanner")
             val cache = File(cacheDir, "scan")
@@ -157,9 +177,13 @@ class MainActivity : Activity() {
                     } ?: throw IllegalStateException("Cannot open selected document")
                     val result = python.callAttr("scan_local_file", temp.absolutePath, File(filesDir, "signatures.db").absolutePath).toString()
                     val apkReview = if (name.endsWith(".apk", ignoreCase = true)) inspectApkPermissions(temp) else ""
-                    if (result.startsWith("THREAT MATCH:")) threats++
+                    if (result.startsWith("THREAT MATCH:")) {
+                        threats++
+                        detectedTemps.add(Pair(name, temp))
+                    } else {
+                        temp.delete()
+                    }
                     results.add(name + ": " + result + apkReview)
-                    temp.delete()
                 } catch (error: Exception) {
                     results.add(uri.toString() + ": ERROR - " + (error.localizedMessage ?: "unreadable"))
                 }
@@ -171,10 +195,78 @@ class MainActivity : Activity() {
                 status.text = "SCAN FINISHED\n\n" + summary +
                     if (results.size > 40) "\n\n…and " + (results.size - 40) + " more items." else ""
                 scanCount.text = results.size.toString() + " files scanned  •  " + threats + " threat matches"
+                if (detectedTemps.isNotEmpty()) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Threat matches found")
+                        .setMessage(threats.toString() + " file(s) matched local signatures. Copy matched files to the app-private quarantine? Original files will NOT be deleted or changed.")
+                        .setNegativeButton("Not now") { _, _ -> detectedTemps.forEach { it.second.delete() } }
+                        .setPositiveButton("Copy to quarantine") { _, _ ->
+                            worker.execute {
+                                val saved = mutableListOf<String>()
+                                val folder = File(filesDir, "quarantine").apply { mkdirs() }
+                                detectedTemps.forEach { item ->
+                                    try {
+                                        val target = File(folder, System.currentTimeMillis().toString() + "_" + item.second.name)
+                                        item.second.copyTo(target, overwrite = false)
+                                        File(target.absolutePath + ".meta").writeText(item.first)
+                                        saved.add(item.first)
+                                    } catch (_: Exception) { }
+                                    item.second.delete()
+                                }
+                                runOnUiThread {
+                                    status.text = "Quarantine saved " + saved.size + " file(s) in app-private storage. Original files remain unchanged; manually remove originals only after verifying the detection."
+                                }
+                            }
+                        }
+                        .show()
+                }
             }
         }
     }
 
+
+
+    private fun showQuarantine() {
+        val folder = File(filesDir, "quarantine")
+        val items = folder.listFiles()?.filter { it.isFile && !it.name.endsWith(".meta") }.orEmpty()
+        if (items.isEmpty()) {
+            status.text = "Quarantine is empty. Detected files can be copied here after a scan."
+            return
+        }
+        val labels = items.map { file ->
+            val meta = File(file.absolutePath + ".meta")
+            val original = if (meta.exists()) meta.readText() else file.name
+            original + "  (" + file.length() + " bytes)"
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Quarantine • " + items.size + " item(s)")
+            .setItems(labels) { _, index ->
+                val selected = items[index]
+                AlertDialog.Builder(this)
+                    .setTitle("Restore quarantined copy?")
+                    .setMessage("This exports a copy to a location you choose. It does not verify the file is safe. Do not install or open a detected file unless you are certain it is safe.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Export copy") { _, _ ->
+                        restoreFile = selected
+                        val meta = File(selected.absolutePath + ".meta")
+                        val original = if (meta.exists()) meta.readText() else selected.name
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(Intent.EXTRA_TITLE, original.substringAfterLast('/').take(120))
+                        }
+                        startActivityForResult(intent, restoreRequest)
+                    }
+                    .setNeutralButton("Delete quarantine copy") { _, _ ->
+                        selected.delete()
+                        File(selected.absolutePath + ".meta").delete()
+                        status.text = "Quarantine copy deleted. Original source was not changed."
+                    }
+                    .show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
 
     @Suppress("DEPRECATION")
     private fun inspectApkPermissions(apkFile: File): String {

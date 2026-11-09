@@ -45,6 +45,7 @@ class MainActivity : Activity() {
     private var refreshPermissionsOnResume = false
     private var pendingFullStorageScan = false
     @Volatile private var scanCancelled = false
+    @Volatile private var fullStorageScanActive = false
 
     private lateinit var pageContainer: LinearLayout
     private lateinit var navigationBar: LinearLayout
@@ -695,41 +696,81 @@ class MainActivity : Activity() {
     }
 
     private fun startFullStorageScan() {
-        status.text = "Preparing accessible shared storage scan…"
-        scanCount.text = "Finding files…"
+        synchronized(this) {
+            if (fullStorageScanActive) {
+                runOnUiThread { status.text = "Full storage scan is already running. Please wait for it to finish." }
+                return
+            }
+            fullStorageScanActive = true
+        }
+        scanCancelled = false
+        runOnUiThread {
+            status.text = "Indexing all accessible shared-storage files…"
+            scanCount.text = "Finding files… no 5,000-file limit"
+            updateScanProgress(0, 0, 0)
+        }
         worker.execute {
             try {
                 val root = Environment.getExternalStorageDirectory().canonicalFile
+                val rootPath = root.toPath()
                 val queue = java.util.ArrayDeque<File>()
+                val visitedDirectories = HashSet<String>()
                 val uris = ArrayList<Uri>()
                 queue.add(root)
-                var visited = 0
-                while (queue.isNotEmpty() && uris.size < 5000 && visited < 30000) {
+                var visitedEntries = 0
+                var inaccessible = 0
+                while (queue.isNotEmpty() && !scanCancelled) {
                     val dir = queue.removeFirst()
-                    val children = try { dir.listFiles() } catch (e: Exception) { null } ?: continue
+                    val canonicalDir = try { dir.canonicalFile } catch (_: Exception) { inaccessible++; continue }
+                    if (!visitedDirectories.add(canonicalDir.absolutePath)) continue
+                    val children = try { canonicalDir.listFiles() } catch (_: Exception) { null }
+                    if (children == null) { inaccessible++; continue }
                     for (child in children) {
-                        if (uris.size >= 5000 || visited >= 30000) break
-                        visited++
+                        if (scanCancelled) break
+                        visitedEntries++
                         try {
-                            val f = child.canonicalFile
-                            if (!f.toPath().startsWith(root.toPath())) continue
-                            if (child.isDirectory) {
-                                val p = f.absolutePath
-                                if (!p.contains("/Android/data/") && !p.contains("/Android/obb/")) queue.add(f)
-                            } else if (child.isFile && child.canRead()) uris.add(Uri.fromFile(f))
-                        } catch (e: Exception) { }
+                            val file = child.canonicalFile
+                            if (!file.toPath().startsWith(rootPath)) continue
+                            if (file.isDirectory) {
+                                val childPath = file.absolutePath
+                                if (!childPath.contains("/Android/data/") && !childPath.contains("/Android/obb/")) {
+                                    if (!visitedDirectories.contains(childPath)) queue.add(file)
+                                } else inaccessible++
+                            } else if (file.isFile && file.canRead()) uris.add(Uri.fromFile(file))
+                            else inaccessible++
+                        } catch (_: Exception) { inaccessible++ }
+                    }
+                    if (visitedEntries % 500 == 0) {
+                        val found = uris.size
+                        val checked = visitedEntries
+                        runOnUiThread { status.text = "Indexing storage… $found files found, $checked entries checked." }
                     }
                 }
-                runOnUiThread {
-                    if (uris.isEmpty()) {
+                if (scanCancelled) {
+                    fullStorageScanActive = false
+                    runOnUiThread {
+                        status.text = "Storage indexing cancelled. ${uris.size} files were found but not scanned."
+                        scanCount.text = "CANCELLED • ${uris.size} files found"
+                    }
+                    return@execute
+                }
+                if (uris.isEmpty()) {
+                    fullStorageScanActive = false
+                    runOnUiThread {
+                        updateScanProgress(0, 0, 0)
                         status.text = "No readable files found. Check All files access permission."
                         scanCount.text = "0 files found"
-                    } else {
-                        status.text = "Found " + uris.size + " files. Starting scan…"
+                    }
+                } else {
+                    val total = uris.size
+                    runOnUiThread {
+                        status.text = "Index complete. Scanning all $total accessible files now."
+                        scanCount.text = "0 / $total files • $inaccessible inaccessible entries skipped"
                         scanUris(uris)
                     }
                 }
             } catch (e: Exception) {
+                fullStorageScanActive = false
                 runOnUiThread {
                     status.text = "Full storage scan failed: " + (e.localizedMessage ?: e.javaClass.simpleName)
                     scanCount.text = "Scan unavailable"
@@ -737,7 +778,6 @@ class MainActivity : Activity() {
             }
         }
     }
-
     @Deprecated("Uses the platform document picker for broad Android compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -816,6 +856,7 @@ class MainActivity : Activity() {
             status.text = "Preparing scan of $total file(s)…"
         }
         if (uris.isEmpty()) {
+            fullStorageScanActive = false
             runOnUiThread {
                 updateScanProgress(0, 0, 0)
                 status.text = "No files were found in the selected location."
@@ -862,6 +903,7 @@ class MainActivity : Activity() {
             val wasCancelled = scanCancelled
             scanCancelled = false
             val summary = results.take(40).joinToString("\n\n")
+            fullStorageScanActive = false
             runOnUiThread {
                 status.text = (if (wasCancelled) "SCAN CANCELLED" else "SCAN FINISHED") + "\n\n" + summary +
                     if (results.size > 40) "\n\n…and " + (results.size - 40) + " more items." else ""

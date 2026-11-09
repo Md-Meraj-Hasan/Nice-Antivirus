@@ -300,3 +300,131 @@ def clear_scan_history_records(db_path: str) -> int:
         return clear_scan_history(connection)
     finally:
         connection.close()
+
+
+
+def diagnostics_report() -> str:
+    """Run safe, isolated functional checks for the app's local Python tools.
+
+    All write tests use a temporary directory and never touch the user's files
+    or production signature database.
+    """
+    import tempfile
+    import zipfile
+    from antivirus.apk_analyzer import inspect_apk_container
+    from antivirus.cleaner import find_cleanup_candidates
+    from antivirus.quarantine import fingerprint
+
+    lines = ["NICE ANTIVIRUS — TOOL DIAGNOSTICS", "Safe self-tests; temporary test files only."]
+    passed = 0
+    warnings = 0
+    failed = 0
+
+    def add(name: str, state: str, detail: str) -> None:
+        nonlocal passed, warnings, failed
+        if state == "PASS":
+            passed += 1
+        elif state == "WARNING":
+            warnings += 1
+        else:
+            failed += 1
+        lines.append("[" + state + "] " + name + " — " + detail)
+
+    try:
+        known = hashlib.sha256(b"Nice Antivirus diagnostics").hexdigest()
+        add("SHA-256 engine", "PASS" if len(known) == 64 else "FAIL",
+            "Known test string hash computed.")
+    except Exception as exc:
+        add("SHA-256 engine", "FAIL", str(exc))
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="niceav_diag_") as folder:
+            sample = Path(folder) / "diagnostic.txt"
+            sample.write_bytes(b"Nice Antivirus diagnostic sample")
+            db_path = str(Path(folder) / "diagnostic.db")
+
+            try:
+                report = scan_local_file(str(sample), db_path, "diagnostic.txt")
+                history = scan_history_report(db_path, 5)
+                ok = "No local signature match" in report and "diagnostic.txt" in history
+                add("File scan + signature database + scan history",
+                    "PASS" if ok else "FAIL",
+                    "Temporary file scanned and history round-trip checked.")
+            except Exception as exc:
+                add("File scan + signature database + scan history", "FAIL", str(exc))
+
+            try:
+                archive_path = Path(folder) / "diagnostic.zip"
+                with zipfile.ZipFile(archive_path, "w") as archive:
+                    archive.writestr("readme.txt", "test")
+                review = inspect_archive_safety(str(archive_path))
+                ok = isinstance(review, dict) and review.get("status") == "no_structural_flags"
+                add("ZIP archive review", "PASS" if ok else "FAIL",
+                    "Normal test archive metadata inspected without extraction.")
+            except Exception as exc:
+                add("ZIP archive review", "FAIL", str(exc))
+
+            try:
+                apk_path = Path(folder) / "diagnostic.apk"
+                with zipfile.ZipFile(apk_path, "w") as archive:
+                    archive.writestr("AndroidManifest.xml", b"test manifest")
+                    archive.writestr("classes.dex", b"test dex")
+                result = inspect_apk_container(str(apk_path))
+                ok = result.get("status") == "valid_container" and result.get("has_manifest") and result.get("has_dex")
+                add("APK structure analyzer", "PASS" if ok else "FAIL",
+                    "Synthetic APK container structure check passed.")
+            except Exception as exc:
+                add("APK structure analyzer", "FAIL", str(exc))
+
+            try:
+                mismatch_path = Path(folder) / "fake.pdf"
+                mismatch_path.write_bytes(b"MZ" + b"diagnostic")
+                review = inspect_file_type_mismatch(str(mismatch_path))
+                ok = isinstance(review, dict) and review.get("code") == "file_extension_mismatch"
+                add("File type mismatch review", "PASS" if ok else "FAIL",
+                    "Test header/extension mismatch correctly flagged for manual review.")
+            except Exception as exc:
+                add("File type mismatch review", "FAIL", str(exc))
+
+            try:
+                empty_file = Path(folder) / "empty.tmp"
+                empty_file.write_bytes(b"")
+                findings = find_cleanup_candidates([str(empty_file)])
+                ok = bool(findings) and findings[0].get("action") == "review_before_delete"
+                add("Storage cleanup analyzer", "PASS" if ok else "FAIL",
+                    "Empty-file candidate identified; no deletion performed.")
+            except Exception as exc:
+                add("Storage cleanup analyzer", "FAIL", str(exc))
+
+            try:
+                digest = fingerprint(str(sample))
+                ok = digest == hashlib.sha256(sample.read_bytes()).hexdigest()
+                add("Quarantine copy fingerprint", "PASS" if ok else "FAIL",
+                    "SHA-256 fingerprint matches test file bytes.")
+            except Exception as exc:
+                add("Quarantine copy fingerprint", "FAIL", str(exc))
+
+            try:
+                duplicate = duplicate_content_report(db_path, 200)
+                add("Duplicate content report", "PASS" if "NO REPEATED CONTENT HASH FOUND" in duplicate else "FAIL",
+                    "Empty-history report executed against isolated test database.")
+            except Exception as exc:
+                add("Duplicate content report", "FAIL", str(exc))
+
+    except Exception as exc:
+        add("Temporary diagnostics workspace", "FAIL", str(exc))
+
+    try:
+        from antivirus.updater import UPDATE_MANIFEST_URL, PUBLISHER_RSA_MODULUS_HEX
+        configured = bool(UPDATE_MANIFEST_URL and PUBLISHER_RSA_MODULUS_HEX)
+        add("Signed virus database updater", "PASS" if configured else "WARNING",
+            "Publisher HTTPS endpoint and public key configured." if configured
+            else "Not active: official HTTPS manifest URL and publisher public key are not configured.")
+    except Exception as exc:
+        add("Signed virus database updater", "FAIL", str(exc))
+
+    lines.append("")
+    lines.append("SUMMARY: " + str(passed) + " PASS • " + str(warnings)
+                 + " WARNING • " + str(failed) + " FAIL")
+    lines.append("These checks validate local code paths, not malware-detection coverage or every Android UI interaction.")
+    return "\\n".join(lines)

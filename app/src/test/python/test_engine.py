@@ -281,6 +281,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("NICE ANTIVIRUS — TOOL DIAGNOSTICS", report)
         self.assertIn("[PASS] SHA-256 engine", report)
         self.assertIn("[PASS] File scan + signature database + scan history", report)
+        self.assertIn("[PASS] Exact signature matching", report)
         self.assertIn("[PASS] APK structure analyzer", report)
         self.assertIn("[PASS] ZIP archive review", report)
         self.assertIn("[PASS] Storage cleanup analyzer", report)

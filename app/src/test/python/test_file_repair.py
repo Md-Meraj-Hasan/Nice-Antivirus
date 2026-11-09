@@ -83,5 +83,31 @@ class FileRepairTests(unittest.TestCase):
         self.assertEqual(result["action"], "inspect_only")
 
 
+    def test_zip_signature_is_detected_from_content(self):
+        source = os.path.join(self.root, "archive.bin")
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("hello.txt", "hello")
+        # ZIP files are identified by their real byte signature, not extension.
+        self.assertEqual(inspect_file(source)["type"], "ZIP-based container")
+
+    def test_png_signature_is_detected_as_inspect_only(self):
+        source = os.path.join(self.root, "image.bin")
+        with open(source, "wb") as stream:
+            stream.write(bytes.fromhex("89504e470d0a1a0a") + b"payload")
+        report = inspect_file(source)
+        self.assertEqual(report["type"], "PNG image")
+        self.assertFalse(report["repair_supported"])
+
+    def test_pdf_repair_writes_real_line_breaks(self):
+        source = os.path.join(self.root, "linebreak.pdf")
+        with open(source, "wb") as stream:
+            stream.write(b"%PDF-1.4\\nbody")
+        result = repair_file(source, os.path.join(self.root, "out"))
+        with open(result["output_path"], "rb") as stream:
+            repaired = stream.read()
+        self.assertTrue(repaired.endswith(b"\\n%%EOF\\n"))
+        self.assertNotIn(b"\\\\n%%EOF", repaired)
+
+
 if __name__ == "__main__":
     unittest.main()

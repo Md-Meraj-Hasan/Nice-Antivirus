@@ -427,4 +427,4 @@ def diagnostics_report() -> str:
     lines.append("SUMMARY: " + str(passed) + " PASS • " + str(warnings)
                  + " WARNING • " + str(failed) + " FAIL")
     lines.append("These checks validate local code paths, not malware-detection coverage or every Android UI interaction.")
-    return "\\n".join(lines)
+    return "\n".join(lines)

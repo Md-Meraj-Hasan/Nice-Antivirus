@@ -173,16 +173,38 @@ def repair_file(source_path: str, output_dir: str) -> dict:
                 if bad is None:
                     details.append("Archive passed CRC validation; no repair needed.")
                 else:
-                    # Recover intact entries into a fresh archive, skipping the
-                    # first corrupt member. Never claim the omitted data recovered.
+                    # Recover each readable member independently. Use ZipInfo rather
+                    # than a filename so duplicate names are handled as separate entries.
+                    recovered = 0
+                    skipped = []
                     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as rebuilt:
                         for info in archive.infolist():
                             try:
-                                payload = archive.read(info.filename)
+                                payload = archive.read(info)
                                 rebuilt.writestr(info, payload)
-                            except (OSError, RuntimeError, zipfile.BadZipFile):
-                                details.append("Skipped unreadable entry: " + info.filename)
-                    action = "intact_entries_repacked"
+                                recovered += 1
+                            except (OSError, RuntimeError, zipfile.BadZipFile, EOFError, ValueError):
+                                skipped.append(info.filename)
+                    if recovered:
+                        try:
+                            with zipfile.ZipFile(target, "r") as check:
+                                bad_output = check.testzip()
+                            if bad_output is None:
+                                action = "partial_recovery" if skipped else "repacked"
+                                details.append("Verified recovered entries: " + str(recovered))
+                            else:
+                                action = "recovery_failed"
+                                details.append("Recovered archive failed CRC verification at: " + bad_output)
+                        except (OSError, zipfile.BadZipFile) as exc:
+                            action = "recovery_failed"
+                            details.append("Recovered archive could not be verified: " + str(exc))
+                    else:
+                        action = "recovery_failed"
+                        details.append("No readable entries could be recovered.")
+                    for name in skipped:
+                        details.append("Skipped unreadable entry: " + name)
+                    report["recovered_entries"] = recovered
+                    report["skipped_entries"] = len(skipped)
         except (OSError, zipfile.BadZipFile) as exc:
             details.append("Central directory is unreadable; safe entry recovery unavailable: " + str(exc))
     elif report["type"] == "SQLite database":
@@ -213,7 +235,7 @@ def repair_file(source_path: str, output_dir: str) -> dict:
         report["output_sha256"] = _sha256(target)
     report["action"] = action
     report["details"] = details
-    report["success"] = target.exists() and target.stat().st_size > 0
+    report["success"] = target.exists() and target.stat().st_size > 0 and action in ("terminal_marker_restored", "sqlite_backup_copy", "partial_recovery", "repacked")
     return report
 
 

@@ -350,6 +350,13 @@ def diagnostics_report() -> str:
                 add("File scan + signature database + scan history",
                     "PASS" if ok else "FAIL",
                     "Temporary file scanned and history round-trip checked.")
+                sample_hash = sha256_file(str(sample))
+                match_result = inspect_file(str(sample), {
+                    sample_hash: {"label": "Diagnostics fixture", "severity": "low"}
+                })
+                add("Exact signature matching",
+                    "PASS" if match_result.get("status") == "detected" else "FAIL",
+                    "Known test hash matched a temporary fixture signature.")
             except Exception as exc:
                 add("File scan + signature database + scan history", "FAIL", str(exc))
 

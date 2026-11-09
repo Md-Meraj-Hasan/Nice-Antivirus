@@ -46,12 +46,20 @@ class MainActivity : Activity() {
     private var pendingFullStorageScan = false
     @Volatile private var scanCancelled = false
 
+    private lateinit var pageContainer: LinearLayout
+    private lateinit var navigationBar: LinearLayout
+    private lateinit var progressCircle: CircularProgressView
+    private lateinit var totalFilesLabel: TextView
+    private lateinit var processedFilesLabel: TextView
+    private lateinit var threatFilesLabel: TextView
+    private var currentPage = "home"
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Python.isStarted()) Python.start(AndroidPlatform(this))
 
-        window.statusBarColor = Color.rgb(7, 15, 27)
-        window.navigationBarColor = Color.rgb(7, 15, 27)
+        window.statusBarColor = Color.rgb(6, 13, 24)
+        window.navigationBarColor = Color.rgb(6, 13, 24)
         if (Build.VERSION.SDK_INT >= 29) {
             window.isNavigationBarContrastEnforced = false
             window.isStatusBarContrastEnforced = false
@@ -59,208 +67,424 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(30))
-            setBackgroundColor(Color.rgb(7, 15, 27))
+            setPadding(dp(15), dp(7), dp(15), dp(5))
+            setBackgroundColor(Color.rgb(6, 13, 24))
         }
-
-        val topBar = LinearLayout(this).apply {
+        val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), dp(4), dp(2), dp(16))
+            setPadding(dp(2), dp(2), dp(2), dp(8))
         }
-        val brandMark = TextView(this).apply {
+        top.addView(TextView(this).apply {
             text = "⬡"
-            textSize = 32f
+            textSize = 29f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(45, 225, 173))
-            background = rounded(Color.rgb(15, 54, 58), dp(14))
-        }
-        topBar.addView(brandMark, LinearLayout.LayoutParams(dp(48), dp(48)))
-        val brandText = LinearLayout(this).apply {
+            setTextColor(Color.rgb(56, 230, 181))
+            background = rounded(Color.rgb(14, 49, 54), dp(13))
+        }, LinearLayout.LayoutParams(dp(46), dp(46)))
+        val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(11), 0, 0, 0)
+            setPadding(dp(10), 0, 0, 0)
         }
-        brandText.addView(TextView(this).apply {
+        brand.addView(TextView(this).apply {
             text = "NICE ANTIVIRUS"
-            textSize = 17f
-            letterSpacing = 0.055f
+            textSize = 16f
+            letterSpacing = 0.06f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
         }, matchWrap())
-        brandText.addView(TextView(this).apply {
-            text = "MOBILE SECURITY CENTER"
+        brand.addView(TextView(this).apply {
+            text = "SECURITY CENTER"
             textSize = 9f
+            letterSpacing = 0.15f
+            setTextColor(Color.rgb(120, 150, 174))
+        }, matchWrap())
+        top.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        top.addView(TextView(this).apply {
+            text = "● PROTECTED"
+            textSize = 9f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.rgb(60, 224, 171))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(Color.rgb(13, 48, 44), dp(20))
+        }, matchWrap())
+        root.addView(top, matchWrap())
+
+        val progressPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(13), dp(10), dp(12), dp(10))
+            background = rounded(Color.rgb(16, 29, 45), dp(18))
+        }
+        progressCircle = CircularProgressView(this)
+        progressPanel.addView(progressCircle, LinearLayout.LayoutParams(dp(82), dp(82)))
+        val progressInfo = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(13), 0, 0, 0)
+        }
+        progressInfo.addView(TextView(this).apply {
+            text = "SCAN PROGRESS"
+            textSize = 10f
             letterSpacing = 0.12f
-            setTextColor(Color.rgb(121, 151, 174))
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.rgb(140, 163, 187))
+        }, matchWrap())
+        totalFilesLabel = TextView(this).apply {
+            text = "TOTAL FILES     0"
+            textSize = 12f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(6), 0, 0)
+        }
+        progressInfo.addView(totalFilesLabel, matchWrap())
+        processedFilesLabel = TextView(this).apply {
+            text = "PROCESSED       0"
+            textSize = 11f
+            setTextColor(Color.rgb(177, 196, 215))
+            setPadding(0, dp(3), 0, 0)
+        }
+        progressInfo.addView(processedFilesLabel, matchWrap())
+        threatFilesLabel = TextView(this).apply {
+            text = "THREATS             0"
+            textSize = 11f
+            setTextColor(Color.rgb(255, 180, 110))
+            setPadding(0, dp(3), 0, 0)
+        }
+        progressInfo.addView(threatFilesLabel, matchWrap())
+        progressPanel.addView(progressInfo, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(progressPanel, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(104)
+        ))
+
+        scanCount = TextView(this).apply {
+            text = "READY • 0 files scanned • 0 threat matches"
+            textSize = 10f
+            setTextColor(Color.rgb(61, 220, 172))
+            setPadding(dp(3), dp(5), dp(3), dp(2))
+        }
+        status = TextView(this).apply {
+            text = "Security tools are ready. Select a section from the menu below."
+            textSize = 10f
+            maxLines = 2
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setTextColor(Color.rgb(158, 179, 200))
+            setOnClickListener {
+                val details = TextView(this@MainActivity).apply {
+                    text = status.text
+                    textSize = 13f
+                    setTextColor(Color.rgb(224, 234, 245))
+                    setPadding(dp(16), dp(12), dp(16), dp(12))
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Activity details")
+                    .setView(ScrollView(this@MainActivity).apply { addView(details) })
+                    .setPositiveButton("Close", null)
+                    .show()
+            }
+        }
+        root.addView(scanCount, matchWrap())
+        root.addView(status, matchWrap())
+
+        pageContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(5), 0, dp(5))
+        }
+        root.addView(pageContainer, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        navigationBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(3), dp(5), dp(3), dp(3))
+            background = rounded(Color.rgb(15, 25, 40), dp(17))
+        }
+        root.addView(navigationBar, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(64)
+        ))
+        setContentView(root)
+        updateScanProgress(0, 0, 0)
+        showDashboardPage("home")
+    }
+
+    private fun showDashboardPage(page: String) {
+        currentPage = page
+        pageContainer.removeAllViews()
+        val pages = mapOf(
+            "home" to Triple("⌂", "DASHBOARD", "Your security overview and quick actions"),
+            "protect" to Triple("🛡", "PROTECTION", "Scan and protect your files and apps"),
+            "reports" to Triple("▤", "SCAN REPORTS", "Review saved scan activity"),
+            "care" to Triple("ϟ", "DEVICE CARE", "Storage, memory and performance tools"),
+            "tools" to Triple("⚙", "PRIVACY & ENGINE", "Permissions, monitoring and diagnostics")
+        )
+        val info = pages[page] ?: pages.getValue("home")
+        val pageHeading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(3), dp(5), dp(3), dp(9))
+        }
+        pageHeading.addView(TextView(this).apply {
+            text = info.first
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(60, 222, 177))
+            background = rounded(Color.rgb(18, 48, 55), dp(12))
+        }, LinearLayout.LayoutParams(dp(43), dp(43)))
+        val headingText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, 0, 0)
+        }
+        headingText.addView(TextView(this).apply {
+            text = info.second
+            textSize = 13f
+            letterSpacing = 0.09f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+        }, matchWrap())
+        headingText.addView(TextView(this).apply {
+            text = info.third
+            textSize = 10f
+            setTextColor(Color.rgb(125, 149, 173))
             setPadding(0, dp(3), 0, 0)
         }, matchWrap())
-        topBar.addView(brandText, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        topBar.addView(TextView(this).apply {
-            text = "●  READY"
-            textSize = 10f
-            letterSpacing = 0.04f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.rgb(54, 224, 169))
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = rounded(Color.rgb(15, 52, 49), dp(20))
-        }, matchWrap())
-        root.addView(topBar, matchWrap())
+        pageHeading.addView(headingText, matchWrap())
+        pageContainer.addView(pageHeading, matchWrap())
 
-        val hero = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(19), dp(20), dp(19), dp(19))
-            background = rounded(Color.rgb(14, 43, 56), dp(22))
-        }
-        val heroTop = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val heroCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        heroCopy.addView(TextView(this).apply {
-            text = "YOUR DEVICE,\nUNDER YOUR CONTROL"
-            textSize = 21f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            letterSpacing = 0.015f
-            setLineSpacing(dp(2).toFloat(), 1f)
-            setTextColor(Color.WHITE)
-        }, matchWrap())
-        heroCopy.addView(TextView(this).apply {
-            text = "Local security tools • Privacy review • Device care"
-            textSize = 11f
-            setTextColor(Color.rgb(164, 195, 207))
-            setPadding(0, dp(8), 0, 0)
-        }, matchWrap())
-        heroTop.addView(heroCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        heroTop.addView(TextView(this).apply {
-            text = "🛡"
-            textSize = 48f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(63, 231, 183))
-        }, LinearLayout.LayoutParams(dp(66), dp(70)))
-        hero.addView(heroTop, matchWrap())
-        val heroHint = TextView(this).apply {
-            text = "Security tools are ready. Run a scan to review files, APKs, folders or your device storage."
-            textSize = 12f
-            setTextColor(Color.rgb(195, 218, 226))
-            setPadding(0, dp(15), 0, dp(15))
-        }
-        hero.addView(heroHint, matchWrap())
-        val scanButton = TextView(this).apply {
-            text = "⌕     START QUICK SCAN      ›"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            letterSpacing = 0.025f
-            setTextColor(Color.rgb(4, 30, 31))
-            setPadding(dp(12), 0, dp(12), 0)
-            background = rounded(Color.rgb(57, 225, 177), dp(13))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { chooseFile() }
-        }
-        hero.addView(scanButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
-        ))
-        root.addView(hero, matchWrap())
-
-        val statusCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = rounded(Color.rgb(17, 28, 44), dp(17))
-        }
-        val statusHeading = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        statusHeading.addView(TextView(this).apply {
-            text = "LIVE SECURITY STATUS"
-            textSize = 10f
-            letterSpacing = 0.11f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.rgb(133, 158, 183))
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        statusHeading.addView(TextView(this).apply {
-            text = "● ENGINE"
-            textSize = 9f
-            setTextColor(Color.rgb(58, 218, 168))
-        }, matchWrap())
-        statusCard.addView(statusHeading, matchWrap())
-        scanCount = TextView(this).apply {
-            text = "READY  •  0 files scanned  •  0 threat matches"
-            textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.rgb(61, 225, 173))
-            setPadding(0, dp(10), 0, dp(7))
-        }
-        statusCard.addView(scanCount, matchWrap())
-        status = TextView(this).apply {
-            text = "No scan is running. Select any tool below to get started."
-            textSize = 12f
-            setLineSpacing(dp(3).toFloat(), 1f)
-            setTextColor(Color.rgb(190, 204, 220))
-        }
-        statusCard.addView(status, matchWrap())
-        val statusParams = matchWrap()
-        statusParams.topMargin = dp(13)
-        root.addView(statusCard, statusParams)
-
-        val quickTitle = TextView(this).apply {
-            text = "QUICK ACTIONS"
-            textSize = 11f
-            letterSpacing = 0.12f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.rgb(140, 163, 188))
-            setPadding(dp(2), dp(21), 0, dp(10))
-        }
-        root.addView(quickTitle, matchWrap())
-        addSection(root, "PROTECTION", "Scan files, apps and storage", listOf(
+        val protection = listOf(
             "SCAN FILE / APK" to { chooseFile() },
             "SCAN ENTIRE STORAGE" to { requestFullStorageScan() },
             "SCAN FOLDER / SD CARD" to { chooseFolder() },
             "CANCEL CURRENT SCAN" to { cancelCurrentScan() },
             "SCAN INSTALLED APPS" to { scanInstalledApps() },
             "QUARANTINE / RESTORE" to { showQuarantine() }
-        ))
-        addSection(root, "SCAN REPORTS", "History and review tools", listOf(
+        )
+        val reports = listOf(
             "SCAN HISTORY" to { showScanHistory() },
             "DUPLICATE CONTENT" to { showDuplicateContentReview() },
             "EXPORT REPORT" to { exportScanHistory() },
             "CLEAR HISTORY" to { confirmClearScanHistory() }
-        ))
-        addSection(root, "DEVICE CARE", "Storage, memory and performance", listOf(
+        )
+        val care = listOf(
             "STORAGE ANALYZER" to { chooseStorageFolder() },
             "RAM & STORAGE" to { showDeviceHealth() },
             "PERFORMANCE ASSIST" to { runPerformanceAssist() },
             "BACKGROUND APP MANAGER" to { showBackgroundAppManager() }
-        ))
-        addSection(root, "APP PRIVACY", "Review app access and activity", listOf(
+        )
+        val tools = listOf(
             "PERMISSION CENTER" to { showPermissionSetup() },
             "APP ACTIVITY" to { showAppActivityMonitor() },
             "PROTECTED APPS" to { showImportantAppsIgnoreList() },
             "START AUTO MONITOR" to { startScheduledMonitoring() },
-            "STOP AUTO MONITOR" to { stopScheduledMonitoring() }
-        ))
-        addSection(root, "SECURITY ENGINE", "Engine health, diagnostics and updates", listOf(
+            "STOP AUTO MONITOR" to { stopScheduledMonitoring() },
             "TOOL CHECKER" to { runToolDiagnostics() },
             "ENGINE SELF-CHECK" to { runSelfCheck() },
             "VIRUS DATABASE UPDATE" to { updateVirusDatabase() }
-        ))
-
-        val disclaimer = TextView(this).apply {
-            text = "SECURITY NOTE\nNice Antivirus uses its installed local signature database and review tools. A no-match result does not guarantee a file is safe. Files are never automatically deleted."
-            textSize = 10f
-            setLineSpacing(dp(3).toFloat(), 1f)
-            setTextColor(Color.rgb(119, 140, 162))
-            setPadding(dp(5), dp(22), dp(5), dp(8))
-            gravity = Gravity.CENTER
+        )
+        when (page) {
+            "home" -> {
+                val hero = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(16), dp(15), dp(16), dp(15))
+                    background = rounded(Color.rgb(13, 43, 54), dp(17))
+                }
+                hero.addView(TextView(this).apply {
+                    text = "YOUR DEVICE. YOUR CONTROL."
+                    textSize = 17f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                }, matchWrap())
+                hero.addView(TextView(this).apply {
+                    text = "Fast access to scanning, privacy and device care."
+                    textSize = 11f
+                    setTextColor(Color.rgb(170, 199, 210))
+                    setPadding(0, dp(5), 0, dp(12))
+                }, matchWrap())
+                val quick = TextView(this).apply {
+                    text = "⌕     START QUICK SCAN"
+                    gravity = Gravity.CENTER
+                    textSize = 13f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.rgb(4, 30, 31))
+                    background = rounded(Color.rgb(57, 225, 177), dp(12))
+                    setOnClickListener { chooseFile() }
+                    isClickable = true
+                    isFocusable = true
+                }
+                hero.addView(quick, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(47)))
+                pageContainer.addView(hero, matchWrap())
+                val label = TextView(this).apply {
+                    text = "QUICK TOOLS"
+                    textSize = 10f
+                    letterSpacing = 0.12f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.rgb(137, 160, 184))
+                    setPadding(dp(3), dp(14), 0, dp(5))
+                }
+                pageContainer.addView(label, matchWrap())
+                addToolGrid(pageContainer, listOf(
+                    "SCAN ENTIRE STORAGE" to { requestFullStorageScan() },
+                    "SCAN FOLDER / SD CARD" to { chooseFolder() },
+                    "SCAN INSTALLED APPS" to { scanInstalledApps() },
+                    "QUARANTINE / RESTORE" to { showQuarantine() }
+                ), 72)
+            }
+            "protect" -> addToolGrid(pageContainer, protection, 76)
+            "reports" -> addToolGrid(pageContainer, reports, 76)
+            "care" -> addToolGrid(pageContainer, care, 76)
+            else -> addToolGrid(pageContainer, tools, 70)
         }
-        root.addView(disclaimer, matchWrap())
 
-        setContentView(ScrollView(this).apply {
-            isFillViewport = true
-            clipToPadding = false
-            addView(root)
-        })
+        navigationBar.removeAllViews()
+        val nav = listOf(
+            Triple("home", "⌂", "HOME"),
+            Triple("protect", "🛡", "PROTECT"),
+            Triple("reports", "▤", "REPORTS"),
+            Triple("care", "ϟ", "CARE"),
+            Triple("tools", "⚙", "TOOLS")
+        )
+        nav.forEach { item ->
+            val selected = item.first == page
+            val tab = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(2), dp(4), dp(2), dp(3))
+                background = if (selected) rounded(Color.rgb(25, 58, 61), dp(12))
+                    else rounded(Color.TRANSPARENT, dp(12))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { showDashboardPage(item.first) }
+            }
+            tab.addView(TextView(this).apply {
+                text = item.second
+                textSize = 18f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) Color.rgb(66, 230, 181) else Color.rgb(132, 151, 174))
+            }, matchWrap())
+            tab.addView(TextView(this).apply {
+                text = item.third
+                textSize = 8f
+                letterSpacing = 0.04f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(if (selected) Color.WHITE else Color.rgb(132, 151, 174))
+            }, matchWrap())
+            navigationBar.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        }
+    }
+
+    private fun addToolGrid(
+        parent: LinearLayout,
+        items: List<Pair<String, () -> Unit>>,
+        tileHeight: Int
+    ) {
+        items.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            pair.forEachIndexed { index, item ->
+                val accent = when {
+                    item.first.contains("SCAN") -> Color.rgb(54, 222, 174)
+                    item.first.contains("REPORT") || item.first.contains("HISTORY") -> Color.rgb(112, 174, 255)
+                    item.first.contains("STORAGE") || item.first.contains("RAM") -> Color.rgb(255, 190, 105)
+                    item.first.contains("PERMISSION") || item.first.contains("APP") -> Color.rgb(185, 151, 255)
+                    else -> Color.rgb(82, 203, 221)
+                }
+                val icon = when {
+                    item.first.contains("SCAN") -> "⌕"
+                    item.first.contains("QUARANTINE") -> "▣"
+                    item.first.contains("HISTORY") || item.first.contains("REPORT") -> "▤"
+                    item.first.contains("DUPLICATE") -> "⧉"
+                    item.first.contains("STORAGE") -> "▦"
+                    item.first.contains("RAM") -> "◉"
+                    item.first.contains("PERFORMANCE") -> "ϟ"
+                    item.first.contains("APP") -> "◈"
+                    item.first.contains("PERMISSION") -> "◇"
+                    item.first.contains("MONITOR") -> "◷"
+                    item.first.contains("CHECK") -> "✓"
+                    item.first.contains("DATABASE") -> "⬡"
+                    else -> "›"
+                }
+                val tile = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(11), dp(7), dp(7), dp(7))
+                    background = rounded(Color.rgb(18, 31, 48), dp(14))
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { item.second() }
+                }
+                tile.addView(TextView(this).apply {
+                    text = icon
+                    textSize = 23f
+                    gravity = Gravity.CENTER
+                    setTextColor(accent)
+                    background = rounded(Color.rgb(29, 44, 61), dp(10))
+                }, LinearLayout.LayoutParams(dp(39), dp(39)))
+                tile.addView(TextView(this).apply {
+                    text = item.first
+                    textSize = 10f
+                    maxLines = 2
+                    setLineSpacing(dp(2).toFloat(), 1f)
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.rgb(222, 232, 242))
+                    setPadding(dp(8), 0, 0, 0)
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(tile, LinearLayout.LayoutParams(0, dp(tileHeight), 1f).apply {
+                    if (index == 0) marginEnd = dp(6) else marginStart = dp(1)
+                })
+            }
+            if (pair.size == 1) row.addView(android.view.View(this),
+                LinearLayout.LayoutParams(0, dp(tileHeight), 1f))
+            val params = matchWrap()
+            params.topMargin = dp(8)
+            parent.addView(row, params)
+        }
+    }
+
+    private fun updateScanProgress(total: Int, done: Int, threats: Int) {
+        val safeTotal = total.coerceAtLeast(0)
+        val safeDone = done.coerceIn(0, safeTotal.coerceAtLeast(0))
+        val percent = if (safeTotal == 0) 0 else ((safeDone * 100L) / safeTotal).toInt()
+        progressCircle.setProgress(percent)
+        totalFilesLabel.text = "TOTAL FILES     " + safeTotal
+        processedFilesLabel.text = "PROCESSED       " + safeDone + " / " + safeTotal
+        threatFilesLabel.text = "THREATS             " + threats
+        scanCount.text = percent.toString() + "% COMPLETE • " + safeDone + " / " + safeTotal + " files"
+    }
+
+    private class CircularProgressView(context: android.content.Context) : android.view.View(context) {
+        private val track = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 8f * resources.displayMetrics.density
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            color = Color.rgb(42, 59, 75)
+        }
+        private val arc = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 8f * resources.displayMetrics.density
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            color = Color.rgb(55, 226, 177)
+        }
+        private val label = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = android.graphics.Paint.Align.CENTER
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+            textSize = 25f * resources.displayMetrics.density
+        }
+        private var percent = 0
+        fun setProgress(value: Int) {
+            percent = value.coerceIn(0, 100)
+            invalidate()
+        }
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val stroke = track.strokeWidth
+            val radius = (minOf(width, height) / 2f) - stroke
+            val cx = width / 2f
+            val cy = height / 2f
+            val bounds = android.graphics.RectF(cx - radius, cy - radius, cx + radius, cy + radius)
+            canvas.drawArc(bounds, 0f, 360f, false, track)
+            if (percent > 0) canvas.drawArc(bounds, -90f, 360f * percent / 100f, false, arc)
+            val baseline = cy - (label.ascent() + label.descent()) / 2f
+            canvas.drawText("$percent%", cx, baseline, label)
+        }
     }
 
     override fun onResume() {
@@ -571,14 +795,23 @@ class MainActivity : Activity() {
 
     private fun scanUris(uris: List<Uri>) {
         scanCancelled = false
+        val total = uris.size
         runOnUiThread {
-            status.text = "Preparing scan of " + uris.size + " item(s)…"
-            scanCount.text = "Scanning…"
+            updateScanProgress(total, 0, 0)
+            status.text = "Preparing scan of $total file(s)…"
+        }
+        if (uris.isEmpty()) {
+            runOnUiThread {
+                updateScanProgress(0, 0, 0)
+                status.text = "No files were found in the selected location."
+            }
+            return
         }
         worker.execute {
             val results = mutableListOf<String>()
             val detectedTemps = mutableListOf<Pair<String, File>>()
             var threats = 0
+            var done = 0
             val python = Python.getInstance().getModule("antivirus.scanner")
             val cache = File(cacheDir, "scan")
             cache.mkdirs()
@@ -603,8 +836,13 @@ class MainActivity : Activity() {
                 } catch (error: Exception) {
                     results.add(uri.toString() + ": ERROR - " + (error.localizedMessage ?: "unreadable"))
                 }
-                val done = index + 1
-                runOnUiThread { scanCount.text = done.toString() + " / " + uris.size + " scanned  •  " + threats + " threat matches" }
+                done = index + 1
+                val currentDone = done
+                val currentThreats = threats
+                runOnUiThread {
+                    updateScanProgress(total, currentDone, currentThreats)
+                    status.text = "Scanning files… $currentDone of $total completed."
+                }
             }
             val wasCancelled = scanCancelled
             scanCancelled = false
@@ -613,7 +851,7 @@ class MainActivity : Activity() {
                 status.text = (if (wasCancelled) "SCAN CANCELLED" else "SCAN FINISHED") + "\n\n" + summary +
                     if (results.size > 40) "\n\n…and " + (results.size - 40) + " more items." else ""
                 if (wasCancelled) status.append("\n\nRemaining files were not scanned.")
-                scanCount.text = results.size.toString() + " / " + uris.size + " files processed  •  " + threats + " threat matches"
+                updateScanProgress(total, done, threats)
                 if (detectedTemps.isNotEmpty()) {
                     AlertDialog.Builder(this)
                         .setTitle("Threat matches found")
@@ -642,8 +880,6 @@ class MainActivity : Activity() {
             }
         }
     }
-
-
 
     @Suppress("DEPRECATION")
     private fun hasUsageAccess(): Boolean {

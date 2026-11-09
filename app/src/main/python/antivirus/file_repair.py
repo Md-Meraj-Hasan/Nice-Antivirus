@@ -6,12 +6,14 @@ reported as inspect-only rather than being modified blindly.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import os
 import shutil
 import sqlite3
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -78,10 +80,44 @@ def inspect_file(path: str) -> dict:
         kind = "MP3 audio"
     elif head.startswith(b"\\x00\\x00\\x00") and b"ftyp" in head:
         kind = "MP4/ISO media"
+    elif suffix == ".json":
+        kind = "JSON text"
+        try:
+            with source.open("r", encoding="utf-8-sig") as stream:
+                json.load(stream)
+            notes.append("JSON syntax is valid.")
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            notes.append("JSON validation failed: " + str(exc))
+    elif suffix == ".xml":
+        kind = "XML text"
+        try:
+            ET.parse(str(source))
+            notes.append("XML is well-formed.")
+        except (ET.ParseError, OSError, UnicodeError) as exc:
+            notes.append("XML validation failed: " + str(exc))
     elif suffix == ".csv":
         kind = "CSV text"
-    elif suffix in (".json", ".xml", ".txt"):
-        kind = suffix[1:].upper() + " text"
+        try:
+            with source.open("r", encoding="utf-8-sig", newline="") as stream:
+                rows = list(csv.reader(stream))
+            widths = [len(row) for row in rows if row]
+            if not widths:
+                notes.append("CSV contains no non-empty rows.")
+            elif len(set(widths)) == 1:
+                notes.append("CSV rows have a consistent column count: " + str(widths[0]))
+            else:
+                notes.append("CSV rows have inconsistent column counts: " + str(sorted(set(widths))))
+        except (csv.Error, UnicodeError, OSError) as exc:
+            notes.append("CSV validation failed: " + str(exc))
+    elif suffix == ".txt":
+        kind = "TXT text"
+        try:
+            with source.open("r", encoding="utf-8-sig") as stream:
+                for _ in stream:
+                    pass
+            notes.append("Text file is valid UTF-8 (optional BOM ignored).")
+        except UnicodeError as exc:
+            notes.append("Text encoding is not valid UTF-8: " + str(exc))
     return {
         "name": source.name,
         "path": str(source),

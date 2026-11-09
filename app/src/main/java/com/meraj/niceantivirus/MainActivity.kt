@@ -416,7 +416,7 @@ class MainActivity : Activity() {
         val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         status.text = "AUTOMATIC APP ACTIVITY MONITOR SCHEDULED\\n\\nWorkManager checks usage changes periodically, with a 15-minute minimum interval. Android may defer work because of Doze mode, battery restrictions or device policy. " +
-            if (notificationsAllowed) "Activity summaries can appear as notifications." else "Notifications are currently not permitted; enable them in Permission Setup to receive alerts." +
+            (if (notificationsAllowed) "Activity summaries can appear as notifications." else "Notifications are currently not permitted; enable them in Permission Setup to receive alerts.") +
             "\\n\\nThis reports foreground app usage changes only. It does not detect malware, downloads, uploads or background processes, and it never closes apps."
         scanCount.text = "Scheduled monitoring enabled"
     }

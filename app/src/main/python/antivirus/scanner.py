@@ -254,8 +254,9 @@ def scan_history_report(db_path: str, limit: int = 50) -> str:
                 if review.get("detail"):
                     lines.append(str(review["detail"]))
                 for indicator in review.get("indicators", []):
-                    if indicator.get("detail"):
-                        lines.append("- " + str(indicator["detail"]))
+                    code = str(indicator.get("code", "review"))
+                    detail = str(indicator.get("detail", ""))
+                    lines.append("- [" + code + "] " + detail if detail else "- [" + code + "]")
                 lines.append("Review indicators are not a malware verdict.")
     return "\n\n".join(lines)
 

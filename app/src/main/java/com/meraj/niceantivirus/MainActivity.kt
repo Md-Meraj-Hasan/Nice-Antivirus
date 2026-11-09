@@ -170,6 +170,7 @@ class MainActivity : Activity() {
             "STOP AUTO MONITOR" to { stopScheduledMonitoring() }
         ))
         addSection(root, "SECURITY ENGINE", "Engine status and updates", listOf(
+            "TOOL CHECKER" to { runToolDiagnostics() },
             "ENGINE SELF-CHECK" to { runSelfCheck() },
             "VIRUS DATABASE UPDATE" to { updateVirusDatabase() }
         ))
@@ -1172,6 +1173,42 @@ class MainActivity : Activity() {
             putExtra(Intent.EXTRA_TITLE, "NiceAntivirus_Scan_History.txt")
         }
         startActivityForResult(intent, exportHistoryRequest)
+    }
+
+
+    private fun runToolDiagnostics() {
+        status.text = "Running safe tool diagnostics…"
+        scanCount.text = "Tool checks running"
+        worker.execute {
+            val report = try {
+                Python.getInstance().getModule("antivirus.scanner")
+                    .callAttr("diagnostics_report").toString()
+            } catch (error: Exception) {
+                "NICE ANTIVIRUS — TOOL DIAGNOSTICS\\n[FAIL] Python diagnostics — " +
+                    (error.localizedMessage ?: "unknown error")
+            }
+            val usage = if (hasUsageAccess()) "[PASS] Android Usage Access — granted"
+                else "[WARNING] Android Usage Access — permission not granted"
+            val notifications = if (Build.VERSION.SDK_INT < 33 ||
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                "[PASS] Notification runtime permission — granted or not required"
+            } else {
+                "[WARNING] Notification runtime permission — not granted"
+            }
+            val scheduled = try {
+                val infos = WorkManager.getInstance(this)
+                    .getWorkInfosForUniqueWork(AppActivityMonitorWorker.UNIQUE_WORK_NAME).get()
+                if (infos.any { !it.state.isFinished }) "[PASS] Scheduled app monitor — work is enqueued"
+                else "[WARNING] Scheduled app monitor — no active scheduled work"
+            } catch (error: Exception) {
+                "[WARNING] Scheduled app monitor — status unavailable"
+            }
+            runOnUiThread {
+                status.text = report + "\\n" + usage + "\\n" + notifications + "\\n" + scheduled +
+                    "\\n\\nPASS means the tested code path worked. WARNING means setup is missing or the feature is not configured. FAIL means a self-test failed."
+                scanCount.text = "Diagnostics completed"
+            }
+        }
     }
 
     private fun runSelfCheck() {

@@ -2,6 +2,7 @@ import hashlib
 import os
 import tempfile
 import unittest
+import zipfile
 
 from antivirus.scanner import engine_self_check, inspect_file
 from antivirus.updater import validate_manifest
@@ -19,6 +20,19 @@ class EngineTests(unittest.TestCase):
             digest = hashlib.sha256(b"sample").hexdigest()
             result = inspect_file(path, {digest: {"label": "Test"}})
             self.assertEqual(result["status"], "detected")
+        finally:
+            os.unlink(path)
+
+    def test_apk_container_review(self):
+        with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as file:
+            path = file.name
+        try:
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"manifest-placeholder")
+                archive.writestr("classes.dex", b"dex-placeholder")
+            result = inspect_file(path, {})
+            self.assertEqual(result["apk_review"]["status"], "valid_container")
+            self.assertTrue(result["apk_review"]["has_manifest"])
         finally:
             os.unlink(path)
 

@@ -56,6 +56,66 @@ def inspect_file_type_mismatch(path: str) -> dict | None:
     return None
 
 
+def inspect_archive_safety(path: str) -> dict | None:
+    """Inspect ZIP metadata without extracting or executing archive contents."""
+    candidate = Path(path)
+    if candidate.suffix.lower() not in {".zip", ".jar", ".docx", ".xlsx", ".pptx"}:
+        return None
+    import stat
+    import zipfile
+    from collections import Counter
+
+    try:
+        with zipfile.ZipFile(candidate) as archive:
+            entries = archive.infolist()
+            names = [entry.filename for entry in entries]
+            indicators = []
+            duplicates = [name for name, count in Counter(names).items() if count > 1]
+            if duplicates:
+                indicators.append({"code": "duplicate_entries", "count": len(duplicates),
+                                   "detail": "Archive contains duplicate entry names."})
+            if len(entries) > 10000:
+                indicators.append({"code": "excessive_entry_count", "count": len(entries),
+                                   "detail": "Archive contains more than 10,000 entries."})
+            traversal = [
+                name for name in names
+                if name.startswith(("/", "\\\\"))
+                or any(part == ".." for part in name.replace("\\\\", "/").split("/"))
+            ]
+            if traversal:
+                indicators.append({"code": "path_traversal_names", "count": len(traversal),
+                                   "detail": "Archive contains entries with absolute or parent-traversal paths."})
+            encrypted = [entry for entry in entries if entry.flag_bits & 0x1]
+            if encrypted:
+                indicators.append({"code": "encrypted_entries", "count": len(encrypted),
+                                   "detail": "Some archive entries are encrypted and cannot be inspected without a password."})
+            symlinks = [
+                entry.filename for entry in entries
+                if stat.S_ISLNK((entry.external_attr >> 16) & 0xFFFF)
+            ]
+            if symlinks:
+                indicators.append({"code": "symbolic_links", "count": len(symlinks),
+                                   "detail": "Archive contains symbolic-link entries."})
+            high_ratio = [
+                entry for entry in entries
+                if entry.file_size >= 10 * 1024 * 1024
+                and entry.compress_size > 0
+                and entry.file_size / entry.compress_size >= 1000
+            ]
+            if high_ratio:
+                indicators.append({"code": "extreme_compression_ratio", "count": len(high_ratio),
+                                   "detail": "Large entries have an extreme compression ratio."})
+            return {
+                "status": "review" if indicators else "no_structural_flags",
+                "entry_count": len(entries),
+                "review_indicators": indicators,
+                "note": "ZIP metadata only; no extraction or execution. Indicators are not a malware verdict.",
+            }
+    except (OSError, zipfile.BadZipFile, RuntimeError):
+        return {"status": "invalid_or_unreadable", "review_indicators": [],
+                "note": "Archive metadata could not be read; this is not a malware verdict."}
+
+
 def sha256_file(path: str, chunk_size: int = 1024 * 1024) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -82,6 +142,10 @@ def inspect_file(path: str, signatures: dict[str, dict]) -> dict:
             result["file_type_review"] = type_review
         if candidate.suffix.lower() == ".apk":
             result["apk_review"] = inspect_apk_container(str(candidate))
+        else:
+            archive_review = inspect_archive_safety(str(candidate))
+            if archive_review is not None:
+                result["archive_review"] = archive_review
         return result
     except OSError as exc:
         return {"path": str(candidate), "status": "error", "reason": str(exc)}
@@ -109,6 +173,12 @@ def scan_local_file(path: str, db_path: str, display_path: str = "") -> str:
     if type_review is not None:
         report += "\nFILE TYPE REVIEW: " + type_review["detail"]
         report += "\nNote: this mismatch is not a malware verdict."
+    archive = result.get("archive_review")
+    if archive is not None:
+        report += "\\nARCHIVE REVIEW: " + archive.get("status", "unknown")
+        for indicator in archive.get("review_indicators", []):
+            report += "\\n- " + indicator["detail"]
+        report += "\\nNote: archive metadata review is not a malware verdict."
     apk = result.get("apk_review")
     if apk is not None:
         report += "\nAPK container: " + apk.get("status", "unknown")

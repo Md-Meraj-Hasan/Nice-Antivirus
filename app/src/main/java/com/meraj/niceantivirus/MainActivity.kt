@@ -1225,17 +1225,17 @@ class MainActivity : Activity() {
 
     private fun packageNameOfThisApp(): String = packageName
     private fun runPerformanceAssist() {
-        status.text = "Checking device performance…"
-        scanCount.text = "Performance diagnostics running…"
+        status.text = "Checking memory, storage and thermal status…"
+        scanCount.text = "Performance assist running…"
         worker.execute {
             try {
-                val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+                val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
                 val memory = ActivityManager.MemoryInfo()
-                activityManager.getMemoryInfo(memory)
-                val dataStat = StatFs(android.os.Environment.getDataDirectory().absolutePath)
-                val freeBytes = dataStat.availableBytes
-                val totalBytes = dataStat.totalBytes
-                val freePercent = if (totalBytes > 0L) (freeBytes * 100.0 / totalBytes) else 0.0
+                manager.getMemoryInfo(memory)
+                val stat = StatFs(Environment.getDataDirectory().absolutePath)
+                val freeBytes = stat.availableBytes
+                val totalBytes = stat.totalBytes
+                val freePercent = if (totalBytes > 0L) freeBytes * 100.0 / totalBytes else 0.0
                 val cacheBytes = directorySize(cacheDir) + (externalCacheDir?.let { directorySize(it) } ?: 0L)
                 val thermal = if (Build.VERSION.SDK_INT >= 29) {
                     val power = getSystemService(POWER_SERVICE) as android.os.PowerManager
@@ -1249,32 +1249,53 @@ class MainActivity : Activity() {
                         android.os.PowerManager.THERMAL_STATUS_SHUTDOWN -> "Shutdown risk"
                         else -> "Unknown"
                     }
-                } else "Not available on this Android version"
-                val advice = mutableListOf<String>()
-                if (memory.lowMemory || memory.availMem < 200L * 1024L * 1024L) advice.add("RAM is low: close unused apps using Android Recent Apps; avoid running many heavy apps together.")
-                if (freePercent < 10.0) advice.add("Storage is critically low: review large downloads/photos and uninstall apps you no longer use.")
-                else if (freePercent < 20.0) advice.add("Storage is getting low: keep more free space for smooth app updates and temporary files.")
-                if (thermal == "Severe" || thermal == "Critical" || thermal == "Emergency" || thermal == "Shutdown risk") advice.add("Device is hot: stop heavy tasks, unplug charging if safe, and let it cool in a ventilated place.")
-                if (advice.isEmpty()) advice.add("No major low-memory, low-storage or thermal warning was reported by Android. Slowness can still be caused by a specific app, old hardware or background activity.")
-                val report = "PERFORMANCE CHECK\n\n" +
-                    "Available RAM: " + Formatter.formatFileSize(this, memory.availMem) + " / " + Formatter.formatFileSize(this, memory.totalMem) + "\n" +
-                    "System low-memory flag: " + memory.lowMemory + "\n" +
-                    "Free internal storage: " + Formatter.formatFileSize(this, freeBytes) + " (" + String.format(java.util.Locale.US, "%.1f", freePercent) + "%)\n" +
-                    "Nice Antivirus temporary cache: " + Formatter.formatFileSize(this, cacheBytes) + "\n" +
-                    "Device thermal status: " + thermal + "\n\nRECOMMENDATIONS\n• " + advice.joinToString("\n• ") +
-                    "\n\nOnly Nice Antivirus temporary cache can be cleared here. Other apps data/cache and system processes are not touched."
+                } else "Not available"
+                val report = "NICE ANTIVIRUS • BOOST & DEVICE STATUS\n\n" +
+                    "AVAILABLE RAM: " + Formatter.formatFileSize(this, memory.availMem) + " / " + Formatter.formatFileSize(this, memory.totalMem) + "\n" +
+                    "RAM LOW: " + if (memory.lowMemory) "YES" else "NO" + "\n" +
+                    "INTERNAL STORAGE FREE: " + Formatter.formatFileSize(this, freeBytes) + " (" + String.format(java.util.Locale.US, "%.1f", freePercent) + "%)\n" +
+                    "NICE ANTIVIRUS CACHE: " + Formatter.formatFileSize(this, cacheBytes) + "\n" +
+                    "DEVICE TEMPERATURE STATUS: " + thermal + "\n\n" +
+                    "WHAT BOOST CAN DO\n" +
+                    "• Clear Nice Antivirus temporary cache.\n" +
+                    "• Release unused memory held by this app.\n" +
+                    "• Open Android storage/app controls for system-managed cleanup.\n\n" +
+                    "Android does not let ordinary apps force-stop every other app or clear their private caches. Android manages RAM automatically; force-stopping apps blindly can interrupt downloads, calls, navigation and sync."
                 runOnUiThread {
                     status.text = report
-                    scanCount.text = "Performance check complete"
-                    AlertDialog.Builder(this)
-                        .setTitle("Performance check complete")
-                        .setMessage("Nice Antivirus temporary cache: " + Formatter.formatFileSize(this, cacheBytes) + ". Clear only these temporary files? Your scans, quarantine, signatures and personal files will be kept.")
-                        .setNegativeButton("Keep cache", null)
-                        .setPositiveButton("Clear app temp cache") { _, _ -> clearOwnTemporaryCache() }
-                        .show()
+                    scanCount.text = "Device status refreshed • RAM " + Formatter.formatFileSize(this, memory.availMem) + " free"
+                    val dialog = AlertDialog.Builder(this)
+                        .setTitle("Nice Boost • Safe actions")
+                        .setMessage("App cache: " + Formatter.formatFileSize(this, cacheBytes) +
+                            "\nFree RAM: " + Formatter.formatFileSize(this, memory.availMem) +
+                            "\nFree storage: " + Formatter.formatFileSize(this, freeBytes) +
+                            "\n\nChoose a safe action. Other apps will not be killed automatically.")
+                        .setNegativeButton("Close", null)
+                        .setNeutralButton("Android Storage") { _, _ ->
+                            try {
+                                startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS))
+                            } catch (_: Exception) {
+                                startActivity(Intent(Settings.ACTION_SETTINGS))
+                            }
+                        }
+                        .setPositiveButton("Clear app cache") { _, _ -> clearOwnTemporaryCache() }
+                        .create()
+                    dialog.setOnShowListener {
+                        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+                            try {
+                                startActivity(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS))
+                            } catch (_: Exception) {
+                                startActivity(Intent(Settings.ACTION_SETTINGS))
+                            }
+                        }
+                    }
+                    dialog.show()
                 }
             } catch (error: Exception) {
-                runOnUiThread { status.text = "Performance check failed: " + (error.localizedMessage ?: "unknown error") }
+                runOnUiThread {
+                    status.text = "Boost diagnostics failed: " + (error.localizedMessage ?: "unknown error")
+                    scanCount.text = "Boost check failed"
+                }
             }
         }
     }
@@ -1298,9 +1319,15 @@ class MainActivity : Activity() {
             }
             clearChildren(cacheDir)
             clearChildren(externalCacheDir)
+            // Ask the runtime to collect only this app's now-unreferenced objects.
+            System.gc()
+            val freed = removed
             runOnUiThread {
-                status.text = "PERFORMANCE CLEANUP COMPLETE\n\nRemoved " + Formatter.formatFileSize(this, removed) + " from Nice Antivirus temporary cache only. Your personal files, quarantine, signature database and other apps were not changed."
-                scanCount.text = "App temporary cache cleaned"
+                status.text = "NICE BOOST COMPLETE\n\nRemoved " + Formatter.formatFileSize(this, freed) +
+                    " of Nice Antivirus temporary cache. Requested garbage collection for this app only. " +
+                    "Android controls system RAM and other apps; no other app was force-stopped and no personal files were deleted."
+                scanCount.text = "Own cache cleared • " + Formatter.formatFileSize(this, freed) + " released"
+                updateScanProgress(0, 0, 0)
             }
         }
     }

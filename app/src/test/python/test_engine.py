@@ -5,7 +5,7 @@ import unittest
 import zipfile
 
 from antivirus.scanner import engine_self_check, inspect_file
-from antivirus.updater import validate_manifest
+from antivirus.updater import validate_manifest, verify_signed_envelope, install_verified_manifest\nfrom antivirus.database import connect
 
 
 class EngineTests(unittest.TestCase):
@@ -35,6 +35,29 @@ class EngineTests(unittest.TestCase):
             self.assertTrue(result["apk_review"]["has_manifest"])
         finally:
             os.unlink(path)
+
+    def test_unsigned_update_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "public key"):
+            verify_signed_envelope({"manifest": {}, "signature": ""}, "")
+
+    def test_signature_database_version_is_monotonic(self):
+        with tempfile.TemporaryDirectory() as folder:
+            connection = connect(os.path.join(folder, "signatures.db"))
+            manifest = {
+                "schema_version": 1, "version": 2,
+                "signatures": [{
+                    "sha256": hashlib.sha256(b"malware-sample").hexdigest(),
+                    "label": "Test threat", "severity": "high",
+                    "description": "Test fixture",
+                }],
+            }
+            self.assertEqual(install_verified_manifest(connection, manifest), 1)
+            with self.assertRaisesRegex(ValueError, "not newer"):
+                install_verified_manifest(connection, manifest)
+            self.assertEqual(connection.execute(
+                "SELECT value FROM metadata WHERE key='signature_db_version'"
+            ).fetchone()[0], "2")
+            connection.close()
 
     def test_manifest_rejects_non_hash(self):
         with self.assertRaises(ValueError):

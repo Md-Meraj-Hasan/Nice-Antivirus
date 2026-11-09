@@ -89,6 +89,7 @@ class MainActivity : Activity() {
         addButton(content, "BACKGROUND APP MANAGER") { showBackgroundAppManager() }
         addButton(content, "PERMISSION SETUP") { showPermissionSetup() }
         addButton(content, "APP ACTIVITY MONITOR") { showAppActivityMonitor() }
+        addButton(content, "IMPORTANT APPS IGNORE LIST") { showImportantAppsIgnoreList() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
@@ -294,6 +295,8 @@ class MainActivity : Activity() {
                     .sortedByDescending { it.second }
                     .take(40)
 
+                val protectedPackages = getSharedPreferences("nice_antivirus_settings", MODE_PRIVATE)
+                    .getStringSet("important_apps_ignore", emptySet()).orEmpty()
                 val report = if (records.isEmpty()) {
                     "No app-usage records were returned for the last 24 hours. Check Usage Access and use the phone normally, then try again."
                 } else {
@@ -309,7 +312,7 @@ class MainActivity : Activity() {
                         } catch (_: Exception) { item.first }
                         val minutes = item.third / 60000L
                         val last = if (item.second > 0L) java.text.DateFormat.getDateTimeInstance().format(java.util.Date(item.second)) else "Unknown"
-                        "$label\\nPackage: ${item.first}\\nForeground use: ${minutes} min\\nLast used: $last"
+                        (if (item.first in protectedPackages) "★ PROTECTED APP\\n" else "") + "$label\\nPackage: ${item.first}\\nForeground use: ${minutes} min\\nLast used: $last"
                     }
                 }
                 runOnUiThread {
@@ -322,6 +325,57 @@ class MainActivity : Activity() {
                     status.text = "App activity review failed: " + (error.localizedMessage ?: "unknown error") +
                         "\\nCheck Usage Access in Permission Setup."
                     scanCount.text = "Activity review unavailable"
+                }
+            }
+        }
+    }
+
+
+    private fun showImportantAppsIgnoreList() {
+        status.text = "Loading installed apps…"
+        worker.execute {
+            try {
+                val launchIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val apps = packageManager.queryIntentActivities(launchIntent, 0)
+                    .mapNotNull { info ->
+                        val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
+                        if (pkg == packageName) return@mapNotNull null
+                        val label = info.loadLabel(packageManager)?.toString() ?: pkg
+                        pkg to label
+                    }
+                    .distinctBy { it.first }
+                    .sortedBy { it.second.lowercase(java.util.Locale.ROOT) }
+                val prefs = getSharedPreferences("nice_antivirus_settings", MODE_PRIVATE)
+                val saved = prefs.getStringSet("important_apps_ignore", emptySet()).orEmpty()
+                val selected = apps.map { it.first in saved }.toBooleanArray()
+                val labels = apps.map { it.second + "\\n" + it.first }.toTypedArray()
+                runOnUiThread {
+                    if (apps.isEmpty()) {
+                        status.text = "No launcher apps were found to add to the ignore list."
+                        return@runOnUiThread
+                    }
+                    AlertDialog.Builder(this)
+                        .setTitle("Important Apps • Ignore List")
+                        .setMultiChoiceItems(labels, selected) { _, which, checked ->
+                            selected[which] = checked
+                        }
+                        .setPositiveButton("Save") { _, _ ->
+                            val protected = apps.indices.filter { selected[it] }.map { apps[it].first }.toSet()
+                            prefs.edit().putStringSet("important_apps_ignore", protected).apply()
+                            status.text = "IMPORTANT APPS IGNORE LIST\\n\\nSaved ${protected.size} protected app(s). These apps will be marked as protected in the activity report and excluded from future Nice Antivirus app-management recommendations. Android itself may still manage apps normally."
+                            scanCount.text = "${protected.size} important app(s) protected"
+                        }
+                        .setNeutralButton("Clear all") { _, _ ->
+                            prefs.edit().remove("important_apps_ignore").apply()
+                            status.text = "Important Apps Ignore List cleared."
+                            scanCount.text = "No apps marked as protected"
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    status.text = "Could not load the app list: " + (error.localizedMessage ?: "unknown error")
                 }
             }
         }

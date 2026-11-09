@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import re
 import urllib.request
@@ -55,7 +56,7 @@ def _verify_rsa_sha256(payload: bytes, signature: bytes, modulus_hex: str,
     if padding_length < 8:
         return False
     expected = b"\x00\x01" + (b"\xff" * padding_length) + b"\x00" + digest_info
-    return hashlib.compare_digest(encoded, expected)
+    return hmac.compare_digest(encoded, expected)
 
 
 def verify_signed_envelope(envelope: dict, modulus_hex: str,

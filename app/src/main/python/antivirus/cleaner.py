@@ -1,4 +1,6 @@
 """Safe cleanup candidate analysis. Never deletes files automatically."""
+from __future__ import annotations
+
 from pathlib import Path
 
 

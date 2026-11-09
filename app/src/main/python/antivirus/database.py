@@ -27,6 +27,14 @@ def connect(db_path: str) -> sqlite3.Connection:
             scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Additive migration for databases created by older app versions.
+    history_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(scan_history)").fetchall()
+    }
+    if "review_summary" not in history_columns:
+        connection.execute(
+            "ALTER TABLE scan_history ADD COLUMN review_summary TEXT NOT NULL DEFAULT ''"
+        )
     connection.execute("""
         CREATE TABLE IF NOT EXISTS metadata (
             key TEXT PRIMARY KEY,
@@ -50,10 +58,16 @@ def load_signatures(connection: sqlite3.Connection) -> dict[str, dict]:
 MAX_SCAN_HISTORY_RECORDS = 1000
 
 
-def record_scan(connection: sqlite3.Connection, path: str, sha256: str | None, status: str) -> None:
+def record_scan(
+    connection: sqlite3.Connection,
+    path: str,
+    sha256: str | None,
+    status: str,
+    review_summary: str = "",
+) -> None:
     connection.execute(
-        "INSERT INTO scan_history (path, sha256, status) VALUES (?, ?, ?)",
-        (str(path), sha256, str(status)),
+        "INSERT INTO scan_history (path, sha256, status, review_summary) VALUES (?, ?, ?, ?)",
+        (str(path), sha256, str(status), str(review_summary)[:4000]),
     )
     # Keep the newest records only, so repeated scans cannot grow this table forever.
     connection.execute(
@@ -67,12 +81,12 @@ def record_scan(connection: sqlite3.Connection, path: str, sha256: str | None, s
 def recent_scans(connection: sqlite3.Connection, limit: int = 50) -> list[dict]:
     safe_limit = max(1, min(int(limit), 200))
     rows = connection.execute(
-        "SELECT path, sha256, status, scanned_at FROM scan_history "
+        "SELECT path, sha256, status, scanned_at, review_summary FROM scan_history "
         "ORDER BY id DESC LIMIT ?",
         (safe_limit,),
     ).fetchall()
     return [
-        {"path": row[0], "sha256": row[1], "status": row[2], "scanned_at": row[3]}
+        {"path": row[0], "sha256": row[1], "status": row[2], "scanned_at": row[3], "review_summary": row[4]}
         for row in rows
     ]
 

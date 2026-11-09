@@ -118,6 +118,19 @@ class EngineTests(unittest.TestCase):
             )
             connection.close()
 
+    def test_scan_history_retains_only_newest_1000_records(self):
+        from antivirus.database import record_scan, recent_scans
+        with tempfile.TemporaryDirectory() as folder:
+            connection = connect(os.path.join(folder, "signatures.db"))
+            for index in range(1005):
+                record_scan(connection, "file-" + str(index), None, "no_match")
+            rows = recent_scans(connection, 200)
+            total = connection.execute("SELECT COUNT(*) FROM scan_history").fetchone()[0]
+            self.assertEqual(total, 1000)
+            self.assertEqual(rows[0]["path"], "file-1004")
+            self.assertEqual(rows[-1]["path"], "file-805")
+            connection.close()
+
     def test_unsigned_update_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "public key"):
             verify_signed_envelope({"manifest": {}, "signature": ""}, "")

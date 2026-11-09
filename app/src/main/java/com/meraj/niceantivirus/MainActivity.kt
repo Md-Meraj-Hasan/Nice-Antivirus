@@ -90,6 +90,7 @@ class MainActivity : Activity() {
         addButton(content, "SCAN FILE / APK") { chooseFile() }
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
         addButton(content, "SCAN HISTORY") { showScanHistory() }
+        addButton(content, "DUPLICATE CONTENT REVIEW") { showDuplicateContentReview() }
         addButton(content, "EXPORT SCAN REPORT") { exportScanHistory() }
         addButton(content, "CLEAR SCAN HISTORY") { confirmClearScanHistory() }
         addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
@@ -967,6 +968,25 @@ class MainActivity : Activity() {
             } catch (error: Exception) {
                 runOnUiThread {
                     status.text = "Could not load scan history: " + (error.localizedMessage ?: "unknown error")
+                }
+            }
+        }
+    }
+
+    private fun showDuplicateContentReview() {
+        status.text = "Checking repeated SHA-256 records…"
+        worker.execute {
+            try {
+                val report = Python.getInstance().getModule("antivirus.scanner")
+                    .callAttr("duplicate_content_report", File(filesDir, "signatures.db").absolutePath, 200)
+                    .toString()
+                runOnUiThread {
+                    status.text = report + "\\n\\nThis is a read-only review of the latest 200 saved scan records, not a full-device duplicate search."
+                    scanCount.text = "Repeated content review"
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    status.text = "Could not review repeated content: " + (error.localizedMessage ?: "unknown error")
                 }
             }
         }

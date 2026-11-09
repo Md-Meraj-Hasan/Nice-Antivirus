@@ -277,7 +277,7 @@ def duplicate_content_report(db_path: str, limit: int = 200) -> str:
     duplicates = [(digest, items) for digest, items in groups.items() if len(items) > 1]
     if not duplicates:
         return (
-            "NO REPEATED CONTENT HASH FOUND IN RECENT SCAN HISTORY.\\n"
+            "NO REPEATED CONTENT HASH FOUND IN RECENT SCAN HISTORY.\n"
             "This checks only retained scan records with SHA-256 values; it does not search the whole device."
         )
     lines = ["REPEATED CONTENT REVIEW (read-only)"]
@@ -290,7 +290,7 @@ def duplicate_content_report(db_path: str, limit: int = 200) -> str:
             "this report does not identify which physical files are duplicates."
         )
     lines.append("No files were changed or deleted.")
-    return "\\n\\n".join(lines)
+    return "\n\n".join(lines)
 
 
 def clear_scan_history_records(db_path: str) -> int:

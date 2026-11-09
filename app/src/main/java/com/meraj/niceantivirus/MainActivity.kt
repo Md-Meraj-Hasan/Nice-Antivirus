@@ -1609,13 +1609,14 @@ class MainActivity : Activity() {
             try {
                 val inputDir = File(cacheDir, "repair-input").apply { mkdirs() }
                 val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
-                tempInput = File.createTempFile("repair_", "_" + safeName, inputDir)
+                val inputCopy = File.createTempFile("repair_", "_" + safeName, inputDir)
+                tempInput = inputCopy
                 contentResolver.openInputStream(uri)?.use { input ->
-                    tempInput.outputStream().use { output -> input.copyTo(output) }
+                    inputCopy.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw IllegalStateException("Selected file cannot be opened")
                 val outputDir = File(cacheDir, "repaired").apply { mkdirs() }
                 val json = Python.getInstance().getModule("antivirus.file_repair")
-                    .callAttr("repair_json", tempInput.absolutePath, outputDir.absolutePath).toString()
+                    .callAttr("repair_json", inputCopy.absolutePath, outputDir.absolutePath).toString()
                 val report = org.json.JSONObject(json)
                 val type = report.optString("type", "Unknown")
                 val action = report.optString("action", "inspect_only")

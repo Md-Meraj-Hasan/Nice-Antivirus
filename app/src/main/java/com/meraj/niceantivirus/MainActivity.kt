@@ -847,42 +847,72 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION")
     private fun scanInstalledApps() {
         status.text = "Checking installed apps visible in the launcher…"
-        scanCount.text = "Installed app scan running…"
+        scanCount.text = "Installed app permission review running…"
         worker.execute {
             val report = mutableListOf<String>()
             var checked = 0
             var flagged = 0
+            var grantedSensitive = 0
             val watchlist = mapOf(
-                "android.permission.READ_SMS" to "READ_SMS",
-                "android.permission.RECEIVE_SMS" to "RECEIVE_SMS",
-                "android.permission.SEND_SMS" to "SEND_SMS",
-                "android.permission.READ_CONTACTS" to "READ_CONTACTS",
-                "android.permission.READ_CALL_LOG" to "READ_CALL_LOG",
-                "android.permission.RECORD_AUDIO" to "RECORD_AUDIO",
-                "android.permission.CAMERA" to "CAMERA",
-                "android.permission.ACCESS_FINE_LOCATION" to "FINE_LOCATION",
-                "android.permission.ACCESS_BACKGROUND_LOCATION" to "BACKGROUND_LOCATION",
-                "android.permission.REQUEST_INSTALL_PACKAGES" to "INSTALL_PACKAGES",
-                "android.permission.SYSTEM_ALERT_WINDOW" to "OVERLAY",
-                "android.permission.READ_PHONE_STATE" to "PHONE_STATE"
+                "android.permission.READ_SMS" to "SMS reading",
+                "android.permission.RECEIVE_SMS" to "SMS receiving",
+                "android.permission.SEND_SMS" to "SMS sending",
+                "android.permission.READ_CONTACTS" to "Contacts reading",
+                "android.permission.WRITE_CONTACTS" to "Contacts editing",
+                "android.permission.READ_CALL_LOG" to "Call-log reading",
+                "android.permission.WRITE_CALL_LOG" to "Call-log editing",
+                "android.permission.RECORD_AUDIO" to "Microphone",
+                "android.permission.CAMERA" to "Camera",
+                "android.permission.ACCESS_FINE_LOCATION" to "Precise location",
+                "android.permission.ACCESS_COARSE_LOCATION" to "Approximate location",
+                "android.permission.ACCESS_BACKGROUND_LOCATION" to "Background location",
+                "android.permission.REQUEST_INSTALL_PACKAGES" to "Install unknown apps",
+                "android.permission.SYSTEM_ALERT_WINDOW" to "Display over other apps",
+                "android.permission.READ_PHONE_STATE" to "Phone state",
+                "android.permission.READ_EXTERNAL_STORAGE" to "Read shared storage",
+                "android.permission.WRITE_EXTERNAL_STORAGE" to "Write shared storage",
+                "android.permission.MANAGE_EXTERNAL_STORAGE" to "Manage all files"
             )
             try {
                 val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                 val launchables = packageManager.queryIntentActivities(launcherIntent, 0)
-                val packageNames = launchables.mapNotNull { it.activityInfo?.packageName }.distinct()
-                packageNames.forEach { packageName ->
+                val packageNames = launchables.mapNotNull { it.activityInfo?.packageName }
+                    .distinct().filter { it != packageName }.sorted()
+                packageNames.forEach { appPackage ->
                     try {
-                        val packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
-                        val permissions = packageInfo.requestedPermissions?.toSet().orEmpty()
-                        val sensitive = permissions.mapNotNull { watchlist[it] }
-                        val label = packageInfo.applicationInfo?.loadLabel(packageManager)?.toString() ?: packageName
+                        val packageInfo = if (Build.VERSION.SDK_INT >= 33) {
+                            packageManager.getPackageInfo(
+                                appPackage,
+                                PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong())
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            packageManager.getPackageInfo(appPackage, PackageManager.GET_PERMISSIONS)
+                        }
+                        val requested = packageInfo.requestedPermissions.orEmpty()
+                        val flags = packageInfo.requestedPermissionsFlags
+                        val sensitive = requested.mapIndexedNotNull { index, permission ->
+                            val label = watchlist[permission] ?: return@mapIndexedNotNull null
+                            val granted = flags != null && index < flags.size &&
+                                (flags[index] and PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+                            if (granted) label else null
+                        }
+                        val declared = requested.mapNotNull { watchlist[it] }
+                        val appLabel = packageInfo.applicationInfo?.loadLabel(packageManager)?.toString() ?: appPackage
                         checked++
-                        if (sensitive.isNotEmpty()) flagged++
-                        report.add(label + " (" + packageName + ")\n" +
-                            if (sensitive.isEmpty()) "No watchlist permissions declared."
-                            else "Sensitive permissions declared: " + sensitive.joinToString(", "))
+                        if (sensitive.isNotEmpty()) {
+                            flagged++
+                            grantedSensitive += sensitive.size
+                        }
+                        val details = when {
+                            sensitive.isNotEmpty() -> "GRANTED sensitive access: " + sensitive.joinToString(", ")
+                            declared.isNotEmpty() -> "Watchlist permissions declared but not currently granted: " +
+                                declared.joinToString(", ")
+                            else -> "No watchlist permissions declared."
+                        }
+                        report.add(appLabel + " (" + appPackage + ")\n" + details)
                     } catch (error: Exception) {
-                        report.add(packageName + ": unable to inspect (" + (error.localizedMessage ?: "unknown") + ")")
+                        report.add(appPackage + ": unable to inspect (" + (error.localizedMessage ?: "unknown") + ")")
                     }
                 }
             } catch (error: Exception) {
@@ -890,10 +920,15 @@ class MainActivity : Activity() {
             }
             val summary = report.take(35).joinToString("\n\n")
             runOnUiThread {
-                scanCount.text = checked.toString() + " launcher apps checked • " + flagged + " with watchlist permissions"
-                status.text = "INSTALLED APP REVIEW\n\n" + summary +
+                scanCount.text = checked.toString() + " apps checked • " + flagged +
+                    " with granted watchlist access"
+                status.text = "INSTALLED APP PERMISSION REVIEW\n\n" + summary +
                     if (report.size > 35) "\n\n…and " + (report.size - 35) + " more apps." else ""
-                status.append("\n\nScope: apps with launcher icons visible to this app. Hidden/system packages may not be included. Permission presence is not proof of malware.")
+                status.append(
+                    "\n\nGRANTED access is separated from permissions merely declared in the APK. " +
+                    "A permission can be legitimate for an app's function; this report is a privacy review, not a malware verdict. " +
+                    "Scope: launcher-visible apps only; hidden/system packages may be omitted."
+                )
             }
         }
     }

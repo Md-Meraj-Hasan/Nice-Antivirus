@@ -13,16 +13,16 @@ from antivirus.apk_analyzer import inspect_apk_container
 
 _FILE_SIGNATURES = (
     (b"%PDF-", {".pdf"}, "PDF document"),
-    (b"\\x89PNG\\r\\n\\x1a\\n", {".png"}, "PNG image"),
-    (b"\\xff\\xd8\\xff", {".jpg", ".jpeg"}, "JPEG image"),
+    (b"\x89PNG\r\n\x1a\n", {".png"}, "PNG image"),
+    (b"\xff\xd8\xff", {".jpg", ".jpeg"}, "JPEG image"),
     (b"GIF87a", {".gif"}, "GIF image"),
     (b"GIF89a", {".gif"}, "GIF image"),
-    (b"PK\\x03\\x04", {".zip", ".apk", ".docx", ".xlsx", ".pptx", ".jar"}, "ZIP-based archive"),
+    (b"PK\x03\x04", {".zip", ".apk", ".docx", ".xlsx", ".pptx", ".jar"}, "ZIP-based archive"),
     (b"MZ", {".exe", ".dll"}, "Windows executable"),
-    (b"\\x7fELF", {".so", ".elf"}, "ELF executable"),
-    (b"7z\\xbc\\xaf\\x27\\x1c", {".7z"}, "7-Zip archive"),
-    (b"Rar!\\x1a\\x07", {".rar"}, "RAR archive"),
-    (b"\\x1f\\x8b", {".gz"}, "GZIP archive"),
+    (b"\x7fELF", {".so", ".elf"}, "ELF executable"),
+    (b"7z\xbc\xaf\x27\x1c", {".7z"}, "7-Zip archive"),
+    (b"Rar!\x1a\x07", {".rar"}, "RAR archive"),
+    (b"\x1f\x8b", {".gz"}, "GZIP archive"),
 )
 
 
@@ -107,8 +107,8 @@ def scan_local_file(path: str, db_path: str, display_path: str = "") -> str:
         report = result["status"].upper() + ": " + result.get("reason", "unknown")
     type_review = result.get("file_type_review")
     if type_review is not None:
-        report += "\\nFILE TYPE REVIEW: " + type_review["detail"]
-        report += "\\nNote: this mismatch is not a malware verdict."
+        report += "\nFILE TYPE REVIEW: " + type_review["detail"]
+        report += "\nNote: this mismatch is not a malware verdict."
     apk = result.get("apk_review")
     if apk is not None:
         report += "\nAPK container: " + apk.get("status", "unknown")

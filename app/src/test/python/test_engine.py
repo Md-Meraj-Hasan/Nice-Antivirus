@@ -1,5 +1,6 @@
 import hashlib
 import os
+import sqlite3
 import tempfile
 import unittest
 import zipfile
@@ -84,6 +85,44 @@ class EngineTests(unittest.TestCase):
             self.assertIn("Original document.pdf", history)
             self.assertIn("NO_MATCH", history)
             self.assertNotIn("temporary-copy.bin", history)
+
+    def test_scan_history_persists_archive_manual_review(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive_path = os.path.join(folder, "review.zip")
+            db_path = os.path.join(folder, "signatures.db")
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("../outside.txt", b"sample")
+            report = scan_local_file(archive_path, db_path, "review.zip")
+            self.assertIn("ARCHIVE REVIEW: review", report)
+            history = scan_history_report(db_path)
+            self.assertIn("MANUAL REVIEW: Archive (review)", history)
+            self.assertIn("path-traversal", history.lower().replace("_", "-"))
+            self.assertIn("not a malware verdict", history.lower())
+
+    def test_scan_history_additive_migration_preserves_existing_rows(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = os.path.join(folder, "old.db")
+            connection = sqlite3.connect(db_path)
+            connection.execute(
+                "CREATE TABLE scan_history (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "path TEXT NOT NULL, sha256 TEXT, status TEXT NOT NULL, "
+                "scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            )
+            connection.execute(
+                "INSERT INTO scan_history (path, sha256, status) VALUES (?, ?, ?)",
+                ("old-file.txt", None, "no_match"),
+            )
+            connection.commit()
+            connection.close()
+            connection = connect(db_path)
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_history)")}
+            self.assertIn("review_summary", columns)
+            row = connection.execute(
+                "SELECT path, review_summary FROM scan_history"
+            ).fetchone()
+            self.assertEqual(row[0], "old-file.txt")
+            self.assertEqual(row[1], "")
+            connection.close()
 
     def test_clear_scan_history_preserves_signatures_and_metadata(self):
         with tempfile.TemporaryDirectory() as folder:

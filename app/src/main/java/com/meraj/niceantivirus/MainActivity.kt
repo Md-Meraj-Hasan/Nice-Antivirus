@@ -47,76 +47,146 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 32, 24, 32)
-            setBackgroundColor(Color.rgb(12, 19, 27))
-        }
-        val hero = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(20, 28, 20, 28)
-            setBackgroundColor(Color.rgb(23, 39, 49))
-        }
-        hero.addView(TextView(this).apply {
-            text = "NICE ANTIVIRUS"
-            textSize = 27f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-        }, matchWrap())
-        hero.addView(TextView(this).apply {
-            text = "SMART MOBILE SECURITY"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(40, 210, 125))
-            setPadding(0, 10, 0, 0)
-        }, matchWrap())
-        content.addView(hero, matchWrap())
-        scanCount = TextView(this).apply {
-            text = "0 files scanned  •  0 threats matched"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(40, 210, 125))
-            setPadding(0, 24, 0, 12)
-        }
-        content.addView(scanCount, matchWrap())
-        status = TextView(this).apply {
-            text = "Protection engine ready. Select a file, APK, folder or SD card."
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setPadding(16, 18, 16, 18)
-            setBackgroundColor(Color.rgb(25, 34, 44))
-        }
-        content.addView(status, matchWrap())
-        addButton(content, "SCAN FILE / APK") { chooseFile() }
-        addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
-        addButton(content, "CANCEL CURRENT SCAN") { cancelCurrentScan() }
-        addButton(content, "SCAN HISTORY") { showScanHistory() }
-        addButton(content, "DUPLICATE CONTENT REVIEW") { showDuplicateContentReview() }
-        addButton(content, "EXPORT SCAN REPORT") { exportScanHistory() }
-        addButton(content, "CLEAR SCAN HISTORY") { confirmClearScanHistory() }
-        addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
-        addButton(content, "ANALYZE STORAGE / JUNK") { chooseStorageFolder() }
-        addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
-        addButton(content, "PERFORMANCE ASSIST") { runPerformanceAssist() }
-        addButton(content, "BACKGROUND APP MANAGER") { showBackgroundAppManager() }
-        addButton(content, "PERMISSION SETUP") { showPermissionSetup() }
-        addButton(content, "APP ACTIVITY MONITOR") { showAppActivityMonitor() }
-        addButton(content, "IMPORTANT APPS IGNORE LIST") { showImportantAppsIgnoreList() }
-        addButton(content, "START AUTOMATIC MONITORING") { startScheduledMonitoring() }
-        addButton(content, "STOP AUTOMATIC MONITORING") { stopScheduledMonitoring() }
-        addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
-        addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
-        addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
-        content.addView(TextView(this).apply {
-            text = "Safety note: no files are automatically deleted. A clean result means no match in the installed signature database, not a guarantee that a file is safe."
-            textSize = 12f
-            setTextColor(Color.LTGRAY)
-            setPadding(4, 20, 4, 8)
-        }, matchWrap())
-        setContentView(ScrollView(this).apply { addView(content) })
-    }
 
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(22), dp(18), dp(28))
+            setBackgroundColor(Color.rgb(8, 15, 27))
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(18), dp(28), dp(18), dp(24))
+            background = rounded(Color.rgb(17, 39, 55), dp(22))
+        }
+        header.addView(TextView(this).apply {
+            text = "⬡"
+            textSize = 42f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(39, 220, 165))
+        }, matchWrap())
+        header.addView(TextView(this).apply {
+            text = "NICE ANTIVIRUS"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            letterSpacing = 0.08f
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(4), 0, dp(4))
+        }, matchWrap())
+        header.addView(TextView(this).apply {
+            text = "MOBILE SECURITY CENTER"
+            textSize = 11f
+            gravity = Gravity.CENTER
+            letterSpacing = 0.16f
+            setTextColor(Color.rgb(47, 218, 167))
+        }, matchWrap())
+        root.addView(header, matchWrap())
+
+        val healthCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            background = rounded(Color.rgb(19, 31, 47), dp(16))
+        }
+        healthCard.addView(TextView(this).apply {
+            text = "SECURITY STATUS"
+            textSize = 11f
+            letterSpacing = 0.12f
+            setTextColor(Color.rgb(143, 164, 187))
+        }, matchWrap())
+        scanCount = TextView(this).apply {
+            text = "READY  •  0 files scanned  •  0 threat matches"
+            textSize = 15f
+            setTextColor(Color.rgb(56, 224, 169))
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        healthCard.addView(scanCount, matchWrap())
+        status = TextView(this).apply {
+            text = "Your security tools are ready. Start a scan to review a file, APK, folder or SD card."
+            textSize = 13f
+            setTextColor(Color.rgb(205, 216, 229))
+            setPadding(0, dp(4), 0, 0)
+        }
+        healthCard.addView(status, matchWrap())
+        val healthParams = matchWrap()
+        healthParams.topMargin = dp(16)
+        root.addView(healthCard, healthParams)
+
+        val scanCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = rounded(Color.rgb(13, 54, 57), dp(18))
+        }
+        scanCard.addView(TextView(this).apply {
+            text = "QUICK SECURITY SCAN"
+            textSize = 12f
+            letterSpacing = 0.1f
+            setTextColor(Color.rgb(115, 238, 197))
+        }, matchWrap())
+        scanCard.addView(TextView(this).apply {
+            text = "Check files and apps for known security risks"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(5), 0, dp(12))
+        }, matchWrap())
+        val scanButton = Button(this).apply {
+            text = "SCAN FILE  /  APK"
+            isAllCaps = false
+            textSize = 15f
+            setTextColor(Color.rgb(5, 28, 29))
+            background = rounded(Color.rgb(48, 221, 169), dp(12))
+            setOnClickListener { chooseFile() }
+        }
+        scanCard.addView(scanButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
+        ))
+        val scanParams = matchWrap()
+        scanParams.topMargin = dp(14)
+        root.addView(scanCard, scanParams)
+
+        addSection(root, "PROTECTION", "Scan and review your device", listOf(
+            "SCAN FOLDER / SD CARD" to { chooseFolder() },
+            "CANCEL CURRENT SCAN" to { cancelCurrentScan() },
+            "SCAN INSTALLED APPS" to { scanInstalledApps() },
+            "QUARANTINE / RESTORE" to { showQuarantine() }
+        ))
+        addSection(root, "SCAN REPORTS", "Your saved scan records", listOf(
+            "SCAN HISTORY" to { showScanHistory() },
+            "DUPLICATE CONTENT" to { showDuplicateContentReview() },
+            "EXPORT REPORT" to { exportScanHistory() },
+            "CLEAR HISTORY" to { confirmClearScanHistory() }
+        ))
+        addSection(root, "DEVICE CARE", "Storage, memory and performance", listOf(
+            "STORAGE ANALYZER" to { chooseStorageFolder() },
+            "RAM & STORAGE" to { showDeviceHealth() },
+            "PERFORMANCE ASSIST" to { runPerformanceAssist() },
+            "BACKGROUND APP MANAGER" to { showBackgroundAppManager() }
+        ))
+        addSection(root, "APP PRIVACY", "Review app access and activity", listOf(
+            "PERMISSION CENTER" to { showPermissionSetup() },
+            "APP ACTIVITY" to { showAppActivityMonitor() },
+            "PROTECTED APPS" to { showImportantAppsIgnoreList() },
+            "START AUTO MONITOR" to { startScheduledMonitoring() },
+            "STOP AUTO MONITOR" to { stopScheduledMonitoring() }
+        ))
+        addSection(root, "SECURITY ENGINE", "Engine status and updates", listOf(
+            "ENGINE SELF-CHECK" to { runSelfCheck() },
+            "VIRUS DATABASE UPDATE" to { updateVirusDatabase() }
+        ))
+
+        root.addView(TextView(this).apply {
+            text = "IMPORTANT: Nice Antivirus currently checks against its installed local signature database and provides review tools. A no-match result is not a guarantee that a file is safe. No files are automatically deleted."
+            textSize = 11f
+            setTextColor(Color.rgb(137, 153, 173))
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(22), dp(8), dp(8))
+        }, matchWrap())
+
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            addView(root)
+        })
+    }
 
     override fun onResume() {
         super.onResume()
@@ -136,12 +206,77 @@ class MainActivity : Activity() {
         if (requestCode == 4201) showPermissionSetup()
     }
 
+    private fun addSection(
+        parent: LinearLayout,
+        heading: String,
+        subtitle: String,
+        items: List<Pair<String, () -> Unit>>
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(15), dp(14), dp(14))
+            background = rounded(Color.rgb(17, 27, 42), dp(16))
+        }
+        card.addView(TextView(this).apply {
+            text = heading
+            textSize = 14f
+            letterSpacing = 0.08f
+            setTextColor(Color.WHITE)
+        }, matchWrap())
+        card.addView(TextView(this).apply {
+            text = subtitle
+            textSize = 11f
+            setTextColor(Color.rgb(135, 156, 180))
+            setPadding(0, dp(3), 0, dp(12))
+        }, matchWrap())
+        items.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            pair.forEach { item ->
+                val button = Button(this).apply {
+                    text = item.first
+                    isAllCaps = false
+                    textSize = 11f
+                    setTextColor(Color.rgb(220, 232, 245))
+                    background = rounded(Color.rgb(31, 47, 67), dp(10))
+                    setPadding(dp(5), 0, dp(5), 0)
+                    setOnClickListener { item.second() }
+                }
+                row.addView(button, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+                    marginEnd = dp(6)
+                })
+            }
+            if (pair.size == 1) row.addView(android.view.View(this), LinearLayout.LayoutParams(0, dp(50), 1f))
+            card.addView(row, matchWrap())
+            if (pair !== items.chunked(2).last()) {
+                val spacer = android.view.View(this)
+                card.addView(spacer, LinearLayout.LayoutParams(1, dp(7)))
+            }
+        }
+        val params = matchWrap()
+        params.topMargin = dp(13)
+        parent.addView(card, params)
+    }
+
+    private fun rounded(color: Int, radius: Int): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = radius.toFloat()
+        }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
     private fun addButton(parent: LinearLayout, label: String, action: () -> Unit) {
-        parent.addView(Button(this).apply {
+        val button = Button(this).apply {
             text = label
             isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = rounded(Color.rgb(31, 47, 67), dp(10))
             setOnClickListener { action() }
-        }, matchWrap().apply { topMargin = 10 })
+        }
+        parent.addView(button, matchWrap().apply { topMargin = dp(10) })
     }
 
     private fun chooseFile() {

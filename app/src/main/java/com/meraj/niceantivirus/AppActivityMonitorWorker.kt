@@ -49,8 +49,8 @@ class AppActivityMonitorWorker(
                 if (pkg == applicationContext.packageName) return@forEach
                 val key = USAGE_PREFIX + pkg
                 val previous = prefs.getLong(key, -1L)
-                if (baselineExists && pkg !in protected && previous >= 0L && total > previous) {
-                    val delta = total - previous
+                if (baselineExists && pkg !in protected) {
+                    val delta = if (previous < 0L) total else (total - previous).coerceAtLeast(0L)
                     if (delta >= MIN_FOREGROUND_DELTA_MS) newlyUsed.add(pkg to delta)
                 }
             }

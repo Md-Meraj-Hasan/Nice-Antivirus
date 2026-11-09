@@ -3,12 +3,14 @@ package com.meraj.niceantivirus
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ActivityManager
+import android.app.AppOpsManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.net.Uri
 import android.os.Bundle
 import android.os.StatFs
+import android.provider.Settings
 import android.text.format.Formatter
 import android.graphics.Color
 import android.view.Gravity
@@ -84,6 +86,7 @@ class MainActivity : Activity() {
         addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
         addButton(content, "PERFORMANCE ASSIST") { runPerformanceAssist() }
         addButton(content, "BACKGROUND APP MANAGER") { showBackgroundAppManager() }
+        addButton(content, "PERMISSION SETUP") { showPermissionSetup() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
@@ -238,6 +241,58 @@ class MainActivity : Activity() {
 
 
     @Suppress("DEPRECATION")
+    private fun hasUsageAccess(): Boolean {
+        return try {
+            val appOps = getSystemService(APP_OPS_SERVICE) as AppOpsManager
+            val mode = if (Build.VERSION.SDK_INT >= 29) {
+                appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
+            }
+            mode == AppOpsManager.MODE_ALLOWED
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun showPermissionSetup() {
+        val usageGranted = hasUsageAccess()
+        val notificationGranted = Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val report = "NICE ANTIVIRUS • PERMISSION CENTER\\n\\n" +
+            "Usage Access: " + if (usageGranted) "GRANTED" else "NOT GRANTED" + "\\n" +
+            "Notifications: " + if (notificationGranted) "GRANTED / NOT REQUIRED" else "NOT GRANTED" + "\\n\\n" +
+            "Usage Access helps review app-usage activity. It does not reveal whether another app is downloading or processing, and it cannot force-stop apps.\\n\\n" +
+            "Notifications are used for scan and monitor alerts.\\n\\n" +
+            "Android requires you to approve each special permission in system settings. Nice Antivirus cannot grant permissions silently."
+        AlertDialog.Builder(this)
+            .setTitle("Permission Setup")
+            .setMessage(report)
+            .setPositiveButton(if (usageGranted) "Review Usage Access" else "Grant Usage Access") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                } catch (_: Exception) {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                }
+            }
+            .setNeutralButton(if (notificationGranted) "Notification Settings" else "Enable Notifications") { _, _ ->
+                if (Build.VERSION.SDK_INT >= 33 && !notificationGranted) {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4201)
+                } else {
+                    try {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        startActivity(intent)
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                    }
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     private fun showBackgroundAppManager() {
         status.text = "Loading apps available for manual background management…"
         worker.execute {

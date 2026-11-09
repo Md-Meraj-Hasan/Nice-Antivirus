@@ -45,6 +45,34 @@ class FileRepairTests(unittest.TestCase):
         self.assertEqual(result["action"], "sqlite_backup_copy")
         self.assertTrue(os.path.exists(result["output_path"]))
 
+    def test_json_validation_reports_valid_and_invalid_files(self):
+        valid = os.path.join(self.root, "valid.json")
+        invalid = os.path.join(self.root, "invalid.json")
+        with open(valid, "w", encoding="utf-8") as stream:
+            stream.write('{"ok": true}')
+        with open(invalid, "w", encoding="utf-8") as stream:
+            stream.write('{"ok": }')
+        self.assertIn("JSON syntax is valid", " ".join(inspect_file(valid)["notes"]))
+        self.assertIn("JSON validation failed", " ".join(inspect_file(invalid)["notes"]))
+
+    def test_xml_validation_reports_malformed_document(self):
+        source = os.path.join(self.root, "broken.xml")
+        with open(source, "w", encoding="utf-8") as stream:
+            stream.write("<root><item></root>")
+        self.assertIn("XML validation failed", " ".join(inspect_file(source)["notes"]))
+
+    def test_csv_validation_detects_inconsistent_columns(self):
+        source = os.path.join(self.root, "uneven.csv")
+        with open(source, "w", encoding="utf-8", newline="") as stream:
+            stream.write("a,b\\n1,2\\n3,4,5\\n")
+        self.assertIn("inconsistent column counts", " ".join(inspect_file(source)["notes"]))
+
+    def test_text_validation_accepts_utf8_bom(self):
+        source = os.path.join(self.root, "bom.txt")
+        with open(source, "w", encoding="utf-8-sig") as stream:
+            stream.write("hello")
+        self.assertIn("valid UTF-8", " ".join(inspect_file(source)["notes"]))
+
     def test_unknown_format_is_inspect_only(self):
         source = os.path.join(self.root, "sample.xyz")
         with open(source, "wb") as stream:

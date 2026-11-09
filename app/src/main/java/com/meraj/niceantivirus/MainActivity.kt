@@ -44,6 +44,8 @@ class MainActivity : Activity() {
     private val exportHistoryRequest = 4105
     private val fileRepairRequest = 4106
     private val saveRepairRequest = 4107
+    private val fileManagerRequest = 4108
+    private var fileManagerRoot: Uri? = null
     private var pendingRepairOutput: File? = null
     private var restoreFile: File? = null
     private var refreshPermissionsOnResume = false
@@ -290,6 +292,7 @@ class MainActivity : Activity() {
         )
         val care = listOf(
             "STORAGE ANALYZER" to { chooseStorageFolder() },
+            "STORAGE / SD CARD MANAGER" to { chooseFileManagerRoot() },
             "RAM & STORAGE" to { showDeviceHealth() },
             "PERFORMANCE ASSIST" to { runPerformanceAssist() },
             "BACKGROUND APP MANAGER" to { showBackgroundAppManager() }
@@ -829,7 +832,7 @@ class MainActivity : Activity() {
             scanFolder(uri)
         } else if (requestCode == pickFileRequest) {
             scanUris(listOf(uri))
-        } else if (requestCode == storageRequest) {
+        } else if (requestCode == fileManagerRequest) {\n            val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n            try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}\n            fileManagerRoot = uri\n            openManagedDirectory(DocumentFile.fromTreeUri(this, uri), mutableListOf())\n        } else if (requestCode == storageRequest) {
             val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}
             analyzeStorageTree(uri)
@@ -1393,6 +1396,116 @@ class MainActivity : Activity() {
                 updateScanProgress(0, 0, 0)
             }
         }
+    }
+
+    private fun chooseFileManagerRoot() {
+        val saved = getPreferences(MODE_PRIVATE).getString("managed_storage_tree", null)
+        if (saved != null) {
+            try {
+                val uri = Uri.parse(saved)
+                val root = DocumentFile.fromTreeUri(this, uri)
+                if (root != null && root.canRead()) {
+                    fileManagerRoot = uri
+                    openManagedDirectory(root, mutableListOf())
+                    return
+                }
+            } catch (_: Exception) {}
+        }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            putExtra("android.content.extra.SHOW_ADVANCED", true)
+        }
+        startActivityForResult(intent, fileManagerRequest)
+    }
+
+    private fun openManagedDirectory(directory: DocumentFile?, parents: MutableList<DocumentFile>) {
+        if (directory == null || !directory.isDirectory || !directory.canRead()) {
+            status.text = "Selected folder is not accessible. Choose the storage or SD card folder again."
+            return
+        }
+        status.text = "Loading storage folder…"
+        worker.execute {
+            val children = try { directory.listFiles().sortedWith(compareBy<DocumentFile>({ !it.isDirectory }, { (it.name ?: "").lowercase() })) }
+                catch (_: Exception) { emptyList() }
+            val folderSize = children.filter { it.isFile }.sumOf { it.length().coerceAtLeast(0L) }
+            runOnUiThread {
+                val labels = children.map { item ->
+                    (if (item.isDirectory) "📁 " else "📄 ") + (item.name ?: "Unnamed") +
+                        if (item.isFile) "  •  " + formatBytes(item.length()) else ""
+                }.toTypedArray()
+                val title = (directory.name ?: "Storage") + "  •  " + children.size +
+                    " items  •  " + formatBytes(folderSize) + " direct files"
+                val builder = AlertDialog.Builder(this)
+                    .setTitle(title)
+                    .setItems(labels) { _, which ->
+                        val item = children[which]
+                        if (item.isDirectory) {
+                            val next = parents.toMutableList()
+                            next.add(directory)
+                            openManagedDirectory(item, next)
+                        } else showManagedFileActions(item, directory, parents)
+                    }
+                    .setNegativeButton(if (parents.isNotEmpty()) "Back" else "Close") { _, _ ->
+                        if (parents.isNotEmpty()) openManagedDirectory(parents.last(), parents.dropLast(1).toMutableList())
+                    }
+                    .setNeutralButton("Refresh", null)
+                    .setPositiveButton("New folder", null)
+                val dialog = builder.create()
+                dialog.setOnShowListener {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val input = android.widget.EditText(this).apply { hint = "Folder name" }
+                        AlertDialog.Builder(this).setTitle("Create folder").setView(input)
+                            .setNegativeButton("Cancel", null)
+                            .setPositiveButton("Create") { _, _ ->
+                                val name = input.text.toString().trim()
+                                if (name.isBlank() || name.contains("/") || name == "." || name == "..") {
+                                    status.text = "Enter a valid folder name."
+                                } else {
+                                    val created = directory.createDirectory(name)
+                                    status.text = if (created != null) "Folder created: $name" else "Could not create folder. Check write access."
+                                    openManagedDirectory(directory, parents)
+                                }
+                            }.show()
+                    }
+                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                        openManagedDirectory(directory, parents)
+                        dialog.dismiss()
+                    }
+                }
+                dialog.show()
+            }
+        }
+    }
+
+    private fun showManagedFileActions(file: DocumentFile, parent: DocumentFile, parents: MutableList<DocumentFile>) {
+        val name = file.name ?: "Selected file"
+        val actions = arrayOf("Rename", "Delete")
+        AlertDialog.Builder(this).setTitle(name)
+            .setItems(actions) { _, which ->
+                if (which == 0) {
+                    val input = android.widget.EditText(this).apply { setText(name); setSelection(text.length) }
+                    AlertDialog.Builder(this).setTitle("Rename file").setView(input)
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Rename") { _, _ ->
+                            val newName = input.text.toString().trim()
+                            if (newName.isBlank() || newName.contains("/") || newName == "." || newName == "..") {
+                                status.text = "Enter a valid file name."
+                            } else {
+                                val ok = file.renameTo(newName)
+                                status.text = if (ok) "Renamed to $newName" else "Rename failed. Provider may not support it."
+                                openManagedDirectory(parent, parents)
+                            }
+                        }.show()
+                } else {
+                    AlertDialog.Builder(this).setTitle("Delete $name?")
+                        .setMessage("This permanently deletes the selected item from the chosen storage. This cannot be undone.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Delete") { _, _ ->
+                            val ok = file.delete()
+                            status.text = if (ok) "Deleted: $name" else "Delete failed. Check storage permissions."
+                            openManagedDirectory(parent, parents)
+                        }.show()
+                }
+            }.setNegativeButton("Cancel", null).show()
     }
 
     private fun chooseStorageFolder() {

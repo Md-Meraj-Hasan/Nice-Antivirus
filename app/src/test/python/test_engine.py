@@ -37,6 +37,41 @@ class EngineTests(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_apk_review_flags_executable_like_assets_without_verdict(self):
+        with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as file:
+            path = file.name
+        try:
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"manifest-placeholder")
+                archive.writestr("classes.dex", b"dex-placeholder")
+                archive.writestr("assets/payload.jar", b"sample")
+            result = inspect_file(path, {})
+            review = result["apk_review"]
+            self.assertEqual(result["status"], "no_match")
+            self.assertEqual(review["status"], "review")
+            self.assertEqual(review["risk_label"], "manual_review")
+            self.assertIn(
+                "executable_like_assets",
+                [item["code"] for item in review["review_indicators"]],
+            )
+            self.assertIn("not a malware verdict", review["note"].lower())
+        finally:
+            os.unlink(path)
+
+    def test_normal_apk_has_no_structural_flags(self):
+        with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as file:
+            path = file.name
+        try:
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"manifest-placeholder")
+                archive.writestr("classes.dex", b"dex-placeholder")
+                archive.writestr("resources.arsc", b"resources")
+            result = inspect_file(path, {})
+            self.assertEqual(result["apk_review"]["status"], "valid_container")
+            self.assertEqual(result["apk_review"]["review_indicators"], [])
+        finally:
+            os.unlink(path)
+
     def test_unsigned_update_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "public key"):
             verify_signed_envelope({"manifest": {}, "signature": ""}, "")

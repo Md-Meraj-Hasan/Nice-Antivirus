@@ -83,6 +83,7 @@ class MainActivity : Activity() {
         addButton(content, "ANALYZE STORAGE / JUNK") { chooseStorageFolder() }
         addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
         addButton(content, "PERFORMANCE ASSIST") { runPerformanceAssist() }
+        addButton(content, "BACKGROUND APP MANAGER") { showBackgroundAppManager() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
@@ -236,6 +237,56 @@ class MainActivity : Activity() {
 
 
 
+    @Suppress("DEPRECATION")
+    private fun showBackgroundAppManager() {
+        status.text = "Loading apps available for manual background management…"
+        worker.execute {
+            val apps = mutableListOf<Pair<String, String>>()
+            try {
+                val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                packageManager.queryIntentActivities(intent, 0).forEach { info ->
+                    val packageName = info.activityInfo?.packageName ?: return@forEach
+                    if (packageName == packageNameOfThisApp()) return@forEach
+                    val label = info.loadLabel(packageManager)?.toString() ?: packageName
+                    apps.add(Pair(label, packageName))
+                }
+            } catch (error: Exception) {
+                runOnUiThread { status.text = "Cannot list apps: " + (error.localizedMessage ?: "unknown error") }
+                return@execute
+            }
+            val sorted = apps.distinctBy { it.second }.sortedBy { it.first.lowercase() }
+            runOnUiThread {
+                scanCount.text = sorted.size.toString() + " apps available for review"
+                status.text = "BACKGROUND APP MANAGER\\n\\nChoose an app to open its Android App Info page. Android will let you decide whether to force stop it."
+                if (sorted.isEmpty()) {
+                    status.append("\\nNo launcher apps were found.")
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle("Select app • manual control")
+                        .setItems(sorted.map { it.first }.toTypedArray()) { _, index ->
+                            val selected = sorted[index]
+                            AlertDialog.Builder(this)
+                                .setTitle("Review " + selected.first + "?")
+                                .setMessage("Only force stop this app if you are sure it is not downloading, uploading, navigating, playing audio, syncing, or processing important work. Nice Antivirus cannot reliably detect those activities. Force stop may cancel downloads and notifications.")
+                                .setNegativeButton("Cancel", null)
+                                .setPositiveButton("Open App Info") { _, _ ->
+                                    try {
+                                        val details = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + selected.second))
+                                        startActivity(details)
+                                    } catch (error: Exception) {
+                                        status.text = "Could not open Android App Info: " + (error.localizedMessage ?: "unknown error")
+                                    }
+                                }
+                                .show()
+                        }
+                        .setNegativeButton("Close", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun packageNameOfThisApp(): String = packageName
     private fun runPerformanceAssist() {
         status.text = "Checking device performance…"
         scanCount.text = "Performance diagnostics running…"

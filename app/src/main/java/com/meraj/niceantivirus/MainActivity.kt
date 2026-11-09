@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.PackageInfo
 import android.os.Build
+import android.os.Environment
 import android.net.Uri
 import android.os.Bundle
 import android.os.StatFs
@@ -42,6 +43,7 @@ class MainActivity : Activity() {
     private val exportHistoryRequest = 4105
     private var restoreFile: File? = null
     private var refreshPermissionsOnResume = false
+    private var pendingFullStorageScan = false
     @Volatile private var scanCancelled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,6 +147,7 @@ class MainActivity : Activity() {
         root.addView(scanCard, scanParams)
 
         addSection(root, "PROTECTION", "Scan and review your device", listOf(
+            "SCAN ENTIRE STORAGE" to { requestFullStorageScan() },
             "SCAN FOLDER / SD CARD" to { chooseFolder() },
             "CANCEL CURRENT SCAN" to { cancelCurrentScan() },
             "SCAN INSTALLED APPS" to { scanInstalledApps() },
@@ -191,6 +194,10 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (pendingFullStorageScan && Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()) {
+            pendingFullStorageScan = false
+            startFullStorageScan()
+        }
         if (refreshPermissionsOnResume) {
             refreshPermissionsOnResume = false
             showPermissionSetup()
@@ -205,6 +212,7 @@ class MainActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 4201) showPermissionSetup()
+        if (requestCode == 4301 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) startFullStorageScan()
     }
 
     private fun addSection(
@@ -290,6 +298,67 @@ class MainActivity : Activity() {
 
     private fun chooseFolder() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), pickFolderRequest)
+    }
+
+    private fun requestFullStorageScan() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            if (Environment.isExternalStorageManager()) { startFullStorageScan(); return }
+            pendingFullStorageScan = true
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + packageName)))
+            } catch (e: Exception) {
+                pendingFullStorageScan = false
+                status.text = "Full storage permission unavailable. Use SCAN FOLDER / SD CARD."
+            }
+        } else if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+            startFullStorageScan()
+        } else {
+            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 4301)
+        }
+    }
+
+    private fun startFullStorageScan() {
+        status.text = "Preparing accessible shared storage scan…"
+        scanCount.text = "Finding files…"
+        worker.execute {
+            try {
+                val root = Environment.getExternalStorageDirectory().canonicalFile
+                val queue = java.util.ArrayDeque<File>()
+                val uris = ArrayList<Uri>()
+                queue.add(root)
+                var visited = 0
+                while (queue.isNotEmpty() && uris.size < 5000 && visited < 30000) {
+                    val dir = queue.removeFirst()
+                    val children = try { dir.listFiles() } catch (e: Exception) { null } ?: continue
+                    for (child in children) {
+                        if (uris.size >= 5000 || visited >= 30000) break
+                        visited++
+                        try {
+                            val f = child.canonicalFile
+                            if (!f.toPath().startsWith(root.toPath())) continue
+                            if (child.isDirectory) {
+                                val p = f.absolutePath
+                                if (!p.contains("/Android/data/") && !p.contains("/Android/obb/")) queue.add(f)
+                            } else if (child.isFile && child.canRead()) uris.add(Uri.fromFile(f))
+                        } catch (e: Exception) { }
+                    }
+                }
+                runOnUiThread {
+                    if (uris.isEmpty()) {
+                        status.text = "No readable files found. Check All files access permission."
+                        scanCount.text = "0 files found"
+                    } else {
+                        status.text = "Found " + uris.size + " files. Starting scan…"
+                        scanUris(uris)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    status.text = "Full storage scan failed: " + (e.localizedMessage ?: e.javaClass.simpleName)
+                    scanCount.text = "Scan unavailable"
+                }
+            }
+        }
     }
 
     @Deprecated("Uses the platform document picker for broad Android compatibility")
@@ -1002,14 +1071,16 @@ class MainActivity : Activity() {
     }
 
     private fun queryDisplayName(uri: Uri): String? {
-        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor ->
+        if (uri.scheme == "file") return uri.path?.let { File(it).name }
+        return try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                     if (index >= 0) return cursor.getString(index)
                 }
             }
-        return null
+            null
+        } catch (e: Exception) { null }
     }
 
 

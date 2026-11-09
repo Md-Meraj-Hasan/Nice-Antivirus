@@ -42,6 +42,9 @@ class MainActivity : Activity() {
     private val restoreRequest = 4103
     private val storageRequest = 4104
     private val exportHistoryRequest = 4105
+    private val fileRepairRequest = 4106
+    private val saveRepairRequest = 4107
+    private var pendingRepairOutput: File? = null
     private var restoreFile: File? = null
     private var refreshPermissionsOnResume = false
     private var pendingFullStorageScan = false
@@ -299,7 +302,8 @@ class MainActivity : Activity() {
             "STOP AUTO MONITOR" to { stopScheduledMonitoring() },
             "TOOL CHECKER" to { runToolDiagnostics() },
             "ENGINE SELF-CHECK" to { runSelfCheck() },
-            "VIRUS DATABASE UPDATE" to { updateVirusDatabase() }
+            "VIRUS DATABASE UPDATE" to { updateVirusDatabase() },
+            "FILE REPAIR" to { chooseFileForRepair() }
         )
         when (page) {
             "home" -> {
@@ -829,6 +833,26 @@ class MainActivity : Activity() {
             val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}
             analyzeStorageTree(uri)
+        } else if (requestCode == fileRepairRequest) {
+            repairSelectedDocument(uri)
+        } else if (requestCode == saveRepairRequest) {
+            val repaired = pendingRepairOutput
+            pendingRepairOutput = null
+            if (repaired != null && repaired.isFile) {
+                worker.execute {
+                    try {
+                        contentResolver.openOutputStream(uri, "w")?.use { output ->
+                            repaired.inputStream().use { input -> input.copyTo(output) }
+                        } ?: throw IllegalStateException("Cannot create destination file")
+                        runOnUiThread {
+                            status.text = "REPAIR COPY SAVED: " + (queryDisplayName(uri) ?: repaired.name)
+                            scanCount.text = "Repaired copy exported • original unchanged"
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread { status.text = "Could not save repaired copy: " + (error.localizedMessage ?: "unknown error") }
+                    }
+                }
+            }
         } else if (requestCode == exportHistoryRequest) {
             worker.execute {
                 try {
@@ -1564,6 +1588,79 @@ class MainActivity : Activity() {
             output.toString()
         } catch (error: Exception) {
             "\nAPK permission review unavailable: " + (error.localizedMessage ?: "parse error")
+        }
+    }
+
+    private fun chooseFileForRepair() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_TITLE, "Select a damaged or unreadable file")
+        }
+        startActivityForResult(intent, fileRepairRequest)
+    }
+
+    private fun repairSelectedDocument(uri: Uri) {
+        val displayName = queryDisplayName(uri) ?: "selected_file"
+        status.text = "Analyzing file structure: " + displayName
+        scanCount.text = "Python repair engine running…"
+        worker.execute {
+            var tempInput: File? = null
+            try {
+                val inputDir = File(cacheDir, "repair-input").apply { mkdirs() }
+                val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
+                tempInput = File.createTempFile("repair_", "_" + safeName, inputDir)
+                contentResolver.openInputStream(uri)?.use { input ->
+                    tempInput.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw IllegalStateException("Selected file cannot be opened")
+                val outputDir = File(cacheDir, "repaired").apply { mkdirs() }
+                val json = Python.getInstance().getModule("antivirus.file_repair")
+                    .callAttr("repair_json", tempInput.absolutePath, outputDir.absolutePath).toString()
+                val report = org.json.JSONObject(json)
+                val type = report.optString("type", "Unknown")
+                val action = report.optString("action", "inspect_only")
+                val details = report.optJSONArray("details")
+                val explanation = StringBuilder()
+                if (details != null) {
+                    for (index in 0 until details.length()) explanation.append("• ")
+                        .append(details.optString(index)).append("\n")
+                }
+                val outputPath = report.optString("output_path", "")
+                val output = if (outputPath.isNotBlank()) File(outputPath) else null
+                runOnUiThread {
+                    status.text = "FILE REPAIR REPORT\n\nFile: " + displayName +
+                        "\nType: " + type +
+                        "\nSize: " + Formatter.formatFileSize(this, report.optLong("size", 0L)) +
+                        "\nSHA-256: " + report.optString("sha256", "unavailable") +
+                        "\nAction: " + action.replace('_', ' ') +
+                        "\n\n" + explanation.toString() +
+                        "\nOriginal file was not modified."
+                    scanCount.text = if (output != null && output.isFile) "Repair output ready to export" else "Analysis completed • no repaired copy created"
+                    if (output != null && output.isFile && output.length() > 0L) {
+                        AlertDialog.Builder(this)
+                            .setTitle("Repaired copy ready")
+                            .setMessage("A separate output copy was created. Save it to a location you choose? The original file remains unchanged.")
+                            .setNegativeButton("Later", null)
+                            .setPositiveButton("Save copy") { _, _ ->
+                                pendingRepairOutput = output
+                                val saveIntent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "*/*"
+                                    putExtra(Intent.EXTRA_TITLE, output.name)
+                                }
+                                startActivityForResult(saveIntent, saveRepairRequest)
+                            }
+                            .show()
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    status.text = "FILE REPAIR FAILED\n\n" + (error.localizedMessage ?: error.javaClass.simpleName)
+                    scanCount.text = "Repair analysis failed"
+                }
+            } finally {
+                tempInput?.delete()
+            }
         }
     }
 

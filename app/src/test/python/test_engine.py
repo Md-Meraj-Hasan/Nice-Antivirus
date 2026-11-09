@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from antivirus.scanner import engine_self_check, inspect_file, scan_local_file, scan_history_report
+from antivirus.scanner import engine_self_check, inspect_file, scan_local_file, scan_history_report, duplicate_content_report
 from antivirus.updater import validate_manifest, verify_signed_envelope, install_verified_manifest
 from antivirus.database import connect
 
@@ -85,6 +85,34 @@ class EngineTests(unittest.TestCase):
             self.assertIn("Original document.pdf", history)
             self.assertIn("NO_MATCH", history)
             self.assertNotIn("temporary-copy.bin", history)
+
+    def test_duplicate_content_report_groups_identical_hashes_read_only(self):
+        from antivirus.database import record_scan
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = os.path.join(folder, "signatures.db")
+            connection = connect(db_path)
+            same_hash = hashlib.sha256(b"identical file content").hexdigest()
+            other_hash = hashlib.sha256(b"different content").hexdigest()
+            record_scan(connection, "folder/a.txt", same_hash, "no_match")
+            record_scan(connection, "folder/copy.txt", same_hash, "no_match")
+            record_scan(connection, "folder/other.txt", other_hash, "no_match")
+            report = duplicate_content_report(db_path)
+            self.assertIn("SAME SHA-256 CONTENT", report)
+            self.assertIn("folder/a.txt", report)
+            self.assertIn("folder/copy.txt", report)
+            self.assertNotIn("folder/other.txt", report)
+            self.assertIn("No files were changed or deleted", report)
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM scan_history").fetchone()[0],
+                3,
+            )
+            connection.close()
+
+    def test_duplicate_content_report_handles_empty_history(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = duplicate_content_report(os.path.join(folder, "empty.db"))
+            self.assertIn("NO REPEATED CONTENT HASH FOUND", report)
+            self.assertIn("does not search the whole device", report)
 
     def test_scan_history_persists_archive_manual_review(self):
         with tempfile.TemporaryDirectory() as folder:

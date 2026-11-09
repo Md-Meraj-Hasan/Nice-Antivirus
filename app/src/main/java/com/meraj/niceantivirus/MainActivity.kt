@@ -21,10 +21,14 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.documentfile.provider.DocumentFile
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -90,6 +94,8 @@ class MainActivity : Activity() {
         addButton(content, "PERMISSION SETUP") { showPermissionSetup() }
         addButton(content, "APP ACTIVITY MONITOR") { showAppActivityMonitor() }
         addButton(content, "IMPORTANT APPS IGNORE LIST") { showImportantAppsIgnoreList() }
+        addButton(content, "START AUTOMATIC MONITORING") { startScheduledMonitoring() }
+        addButton(content, "STOP AUTOMATIC MONITORING") { stopScheduledMonitoring() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
         addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
@@ -379,6 +385,47 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+
+    private fun startScheduledMonitoring() {
+        if (!hasUsageAccess()) {
+            AlertDialog.Builder(this)
+                .setTitle("Usage Access required")
+                .setMessage("Enable Usage Access before scheduling monitoring. Android will run checks periodically (at least 15 minutes apart); battery optimization may delay them.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Open Settings") { _, _ ->
+                    try {
+                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                    }
+                }
+                .show()
+            return
+        }
+
+        val request = PeriodicWorkRequestBuilder<AppActivityMonitorWorker>(
+            15, TimeUnit.MINUTES
+        ).build()
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+            AppActivityMonitorWorker.UNIQUE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+        val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        status.text = "AUTOMATIC APP ACTIVITY MONITOR SCHEDULED\\n\\nWorkManager checks usage changes periodically, with a 15-minute minimum interval. Android may defer work because of Doze mode, battery restrictions or device policy. " +
+            if (notificationsAllowed) "Activity summaries can appear as notifications." else "Notifications are currently not permitted; enable them in Permission Setup to receive alerts." +
+            "\\n\\nThis reports foreground app usage changes only. It does not detect malware, downloads, uploads or background processes, and it never closes apps."
+        scanCount.text = "Scheduled monitoring enabled"
+    }
+
+    private fun stopScheduledMonitoring() {
+        WorkManager.getInstance(applicationContext)
+            .cancelUniqueWork(AppActivityMonitorWorker.UNIQUE_WORK_NAME)
+        status.text = "Automatic app activity monitoring has been cancelled. No app was stopped or changed."
+        scanCount.text = "Scheduled monitoring disabled"
     }
 
     private fun showPermissionSetup() {

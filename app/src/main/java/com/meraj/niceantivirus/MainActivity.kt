@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     private val pickFolderRequest = 4102
     private val restoreRequest = 4103
     private val storageRequest = 4104
+    private val exportHistoryRequest = 4105
     private var restoreFile: File? = null
     private var refreshPermissionsOnResume = false
 
@@ -89,6 +90,7 @@ class MainActivity : Activity() {
         addButton(content, "SCAN FILE / APK") { chooseFile() }
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
         addButton(content, "SCAN HISTORY") { showScanHistory() }
+        addButton(content, "EXPORT SCAN REPORT") { exportScanHistory() }
         addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
         addButton(content, "ANALYZE STORAGE / JUNK") { chooseStorageFolder() }
         addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
@@ -165,6 +167,21 @@ class MainActivity : Activity() {
             val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}
             analyzeStorageTree(uri)
+        } else if (requestCode == exportHistoryRequest) {
+            worker.execute {
+                try {
+                    val report = Python.getInstance().getModule("antivirus.scanner")
+                        .callAttr("scan_history_report", File(filesDir, "signatures.db").absolutePath, 200)
+                        .toString()
+                    contentResolver.openOutputStream(uri, "w")?.use { output ->
+                        output.write(("NICE ANTIVIRUS - SCAN HISTORY\\n\\n" + report +
+                            "\\n\\nExported locally. No-match does not guarantee a file is safe.").toByteArray(Charsets.UTF_8))
+                    } ?: throw IllegalStateException("Cannot create report file")
+                    runOnUiThread { status.text = "Scan report exported successfully." }
+                } catch (error: Exception) {
+                    runOnUiThread { status.text = "Report export failed: " + (error.localizedMessage ?: "unknown error") }
+                }
+            }
         } else if (requestCode == restoreRequest) {
             val source = restoreFile
             restoreFile = null
@@ -952,6 +969,15 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun exportScanHistory() {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TITLE, "NiceAntivirus_Scan_History.txt")
+        }
+        startActivityForResult(intent, exportHistoryRequest)
     }
 
     private fun runSelfCheck() {

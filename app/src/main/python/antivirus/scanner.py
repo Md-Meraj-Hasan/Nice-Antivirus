@@ -7,7 +7,7 @@ No file is modified or deleted.
 from pathlib import Path
 import hashlib
 from typing import Iterable
-from antivirus.database import connect, load_signatures, record_scan, recent_scans
+from antivirus.database import connect, load_signatures, record_scan, recent_scans, clear_scan_history
 from antivirus.apk_analyzer import inspect_apk_container
 
 
@@ -90,7 +90,16 @@ def scan_history_report(db_path: str, limit: int = 50) -> str:
         digest = (item.get("sha256") or "")[:16]
         lines.append(
             item["scanned_at"] + " | " + item["status"].upper()
-            + "\\n" + item["path"]
-            + ("\\nSHA-256: " + digest + "…" if digest else "")
+            + "\n" + item["path"]
+            + ("\nSHA-256: " + digest + "…" if digest else "")
         )
-    return "\\n\\n".join(lines)
+    return "\n\n".join(lines)
+
+
+def clear_scan_history_records(db_path: str) -> int:
+    """Clear scan history only; signature and metadata tables are untouched."""
+    connection = connect(db_path)
+    try:
+        return clear_scan_history(connection)
+    finally:
+        connection.close()

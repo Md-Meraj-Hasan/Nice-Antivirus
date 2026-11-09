@@ -261,6 +261,38 @@ def scan_history_report(db_path: str, limit: int = 50) -> str:
     return "\n\n".join(lines)
 
 
+
+def duplicate_content_report(db_path: str, limit: int = 200) -> str:
+    """Report identical SHA-256 content among retained scan records; never deletes files."""
+    connection = connect(db_path)
+    try:
+        entries = recent_scans(connection, limit)
+    finally:
+        connection.close()
+    groups = {}
+    for item in entries:
+        digest = item.get("sha256")
+        if digest:
+            groups.setdefault(digest, []).append(item)
+    duplicates = [(digest, items) for digest, items in groups.items() if len(items) > 1]
+    if not duplicates:
+        return (
+            "NO REPEATED CONTENT HASH FOUND IN RECENT SCAN HISTORY.\\n"
+            "This checks only retained scan records with SHA-256 values; it does not search the whole device."
+        )
+    lines = ["REPEATED CONTENT REVIEW (read-only)"]
+    for digest, items in duplicates:
+        lines.append("SAME SHA-256 CONTENT — " + digest)
+        for item in items:
+            lines.append("- " + item["scanned_at"] + " | " + item["path"])
+        lines.append(
+            "These records have identical SHA-256 hashes. They may be copies or repeat scans; "
+            "this report does not identify which physical files are duplicates."
+        )
+    lines.append("No files were changed or deleted.")
+    return "\\n\\n".join(lines)
+
+
 def clear_scan_history_records(db_path: str) -> int:
     """Clear scan history only; signature and metadata tables are untouched."""
     connection = connect(db_path)

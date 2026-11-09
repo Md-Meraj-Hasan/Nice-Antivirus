@@ -98,15 +98,26 @@ def inspect_file(path: str) -> dict:
     elif suffix == ".csv":
         kind = "CSV text"
         try:
+            expected_width = None
+            mismatched_widths = set()
+            non_empty_rows = 0
             with source.open("r", encoding="utf-8-sig", newline="") as stream:
-                rows = list(csv.reader(stream))
-            widths = [len(row) for row in rows if row]
-            if not widths:
+                for row in csv.reader(stream):
+                    if not row:
+                        continue
+                    non_empty_rows += 1
+                    width = len(row)
+                    if expected_width is None:
+                        expected_width = width
+                    elif width != expected_width:
+                        mismatched_widths.add(width)
+            if non_empty_rows == 0:
                 notes.append("CSV contains no non-empty rows.")
-            elif len(set(widths)) == 1:
-                notes.append("CSV rows have a consistent column count: " + str(widths[0]))
+            elif not mismatched_widths:
+                notes.append("CSV rows have a consistent column count: " + str(expected_width))
             else:
-                notes.append("CSV rows have inconsistent column counts: " + str(sorted(set(widths))))
+                mismatched_widths.add(expected_width)
+                notes.append("CSV rows have inconsistent column counts: " + str(sorted(mismatched_widths)))
         except (csv.Error, UnicodeError, OSError) as exc:
             notes.append("CSV validation failed: " + str(exc))
     elif suffix == ".txt":
@@ -141,15 +152,16 @@ def repair_file(source_path: str, output_dir: str) -> dict:
     details = []
 
     if report["type"] == "PDF":
-        data = source.read_bytes()
-        if b"%%EOF" not in data[-2048:]:
-            # A missing terminal marker can be repaired safely as a copy, but
-            # this does not reconstruct missing page objects or xref tables.
-            with target.open("wb") as stream:
-                stream.write(data)
-                if not data.endswith(b"\\n"):
-                    stream.write(b"\\n")
-                stream.write(b"%%EOF\\n")
+        size = source.stat().st_size
+        with source.open("rb") as stream:
+            stream.seek(max(0, size - 2048))
+            has_eof = b"%%EOF" in stream.read(2048)
+        if not has_eof:
+            # Stream-copy large PDFs instead of loading the whole file into RAM.
+            # This restores only the terminal marker, not missing PDF structures.
+            with source.open("rb") as original, target.open("wb") as repaired:
+                shutil.copyfileobj(original, repaired, length=1024 * 1024)
+                repaired.write(b"\\n%%EOF\\n")
             action = "terminal_marker_restored"
             details.append("Added a missing terminal EOF marker only; page contents were not reconstructed.")
         else:

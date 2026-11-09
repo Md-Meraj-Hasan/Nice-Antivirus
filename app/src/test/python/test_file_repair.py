@@ -64,7 +64,7 @@ class FileRepairTests(unittest.TestCase):
     def test_csv_validation_detects_inconsistent_columns(self):
         source = os.path.join(self.root, "uneven.csv")
         with open(source, "w", encoding="utf-8", newline="") as stream:
-            stream.write("a,b\\n1,2\\n3,4,5\\n")
+            stream.write("a,b\n1,2\n3,4,5\n")
         self.assertIn("inconsistent column counts", " ".join(inspect_file(source)["notes"]))
 
     def test_text_validation_accepts_utf8_bom(self):

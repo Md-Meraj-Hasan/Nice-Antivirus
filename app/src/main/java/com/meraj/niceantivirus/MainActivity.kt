@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     private val restoreRequest = 4103
     private val storageRequest = 4104
     private var restoreFile: File? = null
+    private var refreshPermissionsOnResume = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,6 +107,15 @@ class MainActivity : Activity() {
             setPadding(4, 20, 4, 8)
         }, matchWrap())
         setContentView(ScrollView(this).apply { addView(content) })
+    }
+
+
+    override fun onResume() {
+        super.onResume()
+        if (refreshPermissionsOnResume) {
+            refreshPermissionsOnResume = false
+            showPermissionSetup()
+        }
     }
 
     private fun addButton(parent: LinearLayout, label: String, action: () -> Unit) {
@@ -413,6 +423,8 @@ class MainActivity : Activity() {
             ExistingPeriodicWorkPolicy.KEEP,
             request
         )
+        getSharedPreferences("nice_antivirus_settings", MODE_PRIVATE).edit()
+            .putBoolean("scheduled_activity_monitor_enabled", true).apply()
         val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         status.text = "AUTOMATIC APP ACTIVITY MONITOR SCHEDULED\\n\\nWorkManager checks usage changes periodically, with a 15-minute minimum interval. Android may defer work because of Doze mode, battery restrictions or device policy. " +
@@ -424,6 +436,8 @@ class MainActivity : Activity() {
     private fun stopScheduledMonitoring() {
         WorkManager.getInstance(applicationContext)
             .cancelUniqueWork(AppActivityMonitorWorker.UNIQUE_WORK_NAME)
+        getSharedPreferences("nice_antivirus_settings", MODE_PRIVATE).edit()
+            .putBoolean("scheduled_activity_monitor_enabled", false).apply()
         status.text = "Automatic app activity monitoring has been cancelled. No app was stopped or changed."
         scanCount.text = "Scheduled monitoring disabled"
     }
@@ -432,26 +446,36 @@ class MainActivity : Activity() {
         val usageGranted = hasUsageAccess()
         val notificationGranted = Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val notificationsEnabled = notificationGranted && androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
+        val batteryOptimized = if (Build.VERSION.SDK_INT >= 23) {
+            !(getSystemService(POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(packageName)
+        } else false
+        val monitorEnabled = getSharedPreferences("nice_antivirus_settings", MODE_PRIVATE)
+            .getBoolean("scheduled_activity_monitor_enabled", false)
         val report = "NICE ANTIVIRUS • PERMISSION CENTER\\n\\n" +
-            "Usage Access: " + if (usageGranted) "GRANTED" else "NOT GRANTED" + "\\n" +
-            "Notifications: " + if (notificationGranted) "GRANTED / NOT REQUIRED" else "NOT GRANTED" + "\\n\\n" +
-            "Usage Access helps review app-usage activity. It does not reveal whether another app is downloading or processing, and it cannot force-stop apps.\\n\\n" +
-            "Notifications are used for scan and monitor alerts.\\n\\n" +
-            "Android requires you to approve each special permission in system settings. Nice Antivirus cannot grant permissions silently."
+            "Usage Access: " + (if (usageGranted) "GRANTED" else "NOT GRANTED") + "\\n" +
+            "Notifications: " + (if (notificationsEnabled) "ENABLED" else if (!notificationGranted) "PERMISSION NOT GRANTED" else "BLOCKED IN APP SETTINGS") + "\\n" +
+            "Battery optimization: " + (if (Build.VERSION.SDK_INT < 23) "NOT APPLICABLE" else if (batteryOptimized) "ACTIVE (background work may be delayed)" else "IGNORED FOR THIS APP") + "\\n" +
+            "Scheduled monitor: " + (if (monitorEnabled) "ENABLED" else "DISABLED") + "\\n\\n" +
+            "Usage Access supports recent foreground-usage reports. It cannot identify downloads/uploads, prove malware or force-stop apps.\\n\\n" +
+            "Notifications are optional alerts. Battery optimization can delay scheduled checks; exempting this app is optional and may increase battery use.\\n\\n" +
+            "Only enable permissions you understand. Nice Antivirus does not need SMS, contacts, camera, accessibility or device-admin access."
         AlertDialog.Builder(this)
             .setTitle("Permission Setup")
             .setMessage(report)
             .setPositiveButton(if (usageGranted) "Review Usage Access" else "Grant Usage Access") { _, _ ->
+                refreshPermissionsOnResume = true
                 try {
                     startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 } catch (_: Exception) {
                     startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
                 }
             }
-            .setNeutralButton(if (notificationGranted) "Notification Settings" else "Enable Notifications") { _, _ ->
+            .setNeutralButton(if (notificationsEnabled) "Notification Settings" else "Enable Notifications") { _, _ ->
                 if (Build.VERSION.SDK_INT >= 33 && !notificationGranted) {
                     requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4201)
                 } else {
+                    refreshPermissionsOnResume = true
                     try {
                         val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                             .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
@@ -461,7 +485,14 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            .setNegativeButton("Close", null)
+            .setNegativeButton("Battery Settings") { _, _ ->
+                refreshPermissionsOnResume = true
+                try {
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (_: Exception) {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                }
+            }
             .show()
     }
 

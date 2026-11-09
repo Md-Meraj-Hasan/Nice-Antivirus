@@ -832,7 +832,7 @@ class MainActivity : Activity() {
             scanFolder(uri)
         } else if (requestCode == pickFileRequest) {
             scanUris(listOf(uri))
-        } else if (requestCode == fileManagerRequest) {\n            val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n            try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}\n            fileManagerRoot = uri\n            openManagedDirectory(DocumentFile.fromTreeUri(this, uri), mutableListOf())\n        } else if (requestCode == storageRequest) {
+        } else if (requestCode == fileManagerRequest) {\n            val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n            try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}\n            fileManagerRoot = uri\n            getPreferences(MODE_PRIVATE).edit().putString("managed_storage_tree", uri.toString()).apply()\n            openManagedDirectory(DocumentFile.fromTreeUri(this, uri), mutableListOf())\n        } else if (requestCode == storageRequest) {
             val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}
             analyzeStorageTree(uri)

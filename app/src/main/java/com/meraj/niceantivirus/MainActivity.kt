@@ -351,7 +351,17 @@ class MainActivity : Activity() {
             }
             "protect" -> addToolGrid(pageContainer, protection, 76)
             "reports" -> addToolGrid(pageContainer, reports, 76)
-            "care" -> addToolGrid(pageContainer, care, 76)
+            "care" -> {
+                addToolGrid(pageContainer, care, 76)
+                val note = TextView(this).apply {
+                    text = "Storage Analyzer: choose a folder to review files. RAM & Storage: view device status. Performance Assist: clear this app's cache or open Android app controls. Background App Manager: choose an app to review in Android Settings."
+                    textSize = 10f
+                    setLineSpacing(dp(2).toFloat(), 1f)
+                    setTextColor(Color.rgb(135, 158, 181))
+                    setPadding(dp(4), dp(9), dp(4), dp(8))
+                }
+                pageContainer.addView(note, matchWrap())
+            }
             else -> addToolGrid(pageContainer, tools, 70)
         }
 
@@ -438,7 +448,14 @@ class MainActivity : Activity() {
                     elevation = dp(2).toFloat()
                     isClickable = true
                     isFocusable = true
-                    setOnClickListener { item.second() }
+                    setOnClickListener {
+                        try {
+                            item.second()
+                        } catch (error: Exception) {
+                            status.text = key + " failed: " + (error.localizedMessage ?: error.javaClass.simpleName)
+                            scanCount.text = "Action could not be started"
+                        }
+                    }
                 }
                 tile.addView(TextView(this).apply {
                     text = icon
@@ -482,7 +499,6 @@ class MainActivity : Activity() {
         totalFilesLabel.text = "TOTAL FILES     " + safeTotal
         processedFilesLabel.text = "PROCESSED       " + safeDone + " / " + safeTotal
         threatFilesLabel.text = "THREATS             " + threats
-        scanCount.text = percent.toString() + "% COMPLETE • " + safeDone + " / " + safeTotal + " files"
     }
 
     private class CircularProgressView(context: android.content.Context) : android.view.View(context) {
@@ -915,9 +931,12 @@ class MainActivity : Activity() {
                 done = index + 1
                 val currentDone = done
                 val currentThreats = threats
+                val currentLocation = if (uri.scheme == "file") uri.path ?: name else name
                 runOnUiThread {
                     updateScanProgress(total, currentDone, currentThreats)
-                    status.text = "Scanning files… $currentDone of $total completed."
+                    // The progress panel already shows totals; keep this line for the
+                    // actual file being scanned rather than repeating the counters.
+                    status.text = "SCANNING: " + currentLocation
                 }
             }
             val wasCancelled = scanCancelled

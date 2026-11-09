@@ -174,8 +174,8 @@ class MainActivity : Activity() {
                         .callAttr("scan_history_report", File(filesDir, "signatures.db").absolutePath, 200)
                         .toString()
                     contentResolver.openOutputStream(uri, "w")?.use { output ->
-                        output.write(("NICE ANTIVIRUS - SCAN HISTORY\\n\\n" + report +
-                            "\\n\\nExported locally. No-match does not guarantee a file is safe.").toByteArray(Charsets.UTF_8))
+                        output.write(("NICE ANTIVIRUS - SCAN HISTORY\n\n" + report +
+                            "\n\nExported locally. No-match does not guarantee a file is safe.").toByteArray(Charsets.UTF_8))
                     } ?: throw IllegalStateException("Cannot create report file")
                     runOnUiThread { status.text = "Scan report exported successfully." }
                 } catch (error: Exception) {
@@ -345,7 +345,7 @@ class MainActivity : Activity() {
                 val report = if (records.isEmpty()) {
                     "No app-usage records were returned for the last 24 hours. Check Usage Access and use the phone normally, then try again."
                 } else {
-                    records.joinToString("\\n\\n") { item ->
+                    records.joinToString("\n\n") { item ->
                         val label = try {
                             val app = if (Build.VERSION.SDK_INT >= 33) {
                                 packageManager.getApplicationInfo(item.first, PackageManager.ApplicationInfoFlags.of(0))
@@ -357,18 +357,18 @@ class MainActivity : Activity() {
                         } catch (_: Exception) { item.first }
                         val minutes = item.third / 60000L
                         val last = if (item.second > 0L) java.text.DateFormat.getDateTimeInstance().format(java.util.Date(item.second)) else "Unknown"
-                        (if (item.first in protectedPackages) "★ PROTECTED APP\\n" else "") + "$label\\nPackage: ${item.first}\\nForeground use: ${minutes} min\\nLast used: $last"
+                        (if (item.first in protectedPackages) "★ PROTECTED APP\n" else "") + "$label\nPackage: ${item.first}\nForeground use: ${minutes} min\nLast used: $last"
                     }
                 }
                 runOnUiThread {
                     scanCount.text = records.size.toString() + " apps with usage records • last 24 hours"
-                    status.text = "APP ACTIVITY MONITOR • LAST 24 HOURS\\n\\n" + report +
-                        "\\n\\nImportant: usage history is not a live running-process list. It cannot identify downloads, uploads or background work, and it must never be used alone to force-stop an app."
+                    status.text = "APP ACTIVITY MONITOR • LAST 24 HOURS\n\n" + report +
+                        "\n\nImportant: usage history is not a live running-process list. It cannot identify downloads, uploads or background work, and it must never be used alone to force-stop an app."
                 }
             } catch (error: Exception) {
                 runOnUiThread {
                     status.text = "App activity review failed: " + (error.localizedMessage ?: "unknown error") +
-                        "\\nCheck Usage Access in Permission Setup."
+                        "\nCheck Usage Access in Permission Setup."
                     scanCount.text = "Activity review unavailable"
                 }
             }
@@ -393,7 +393,7 @@ class MainActivity : Activity() {
                 val prefs = getSharedPreferences("nice_antivirus_settings", MODE_PRIVATE)
                 val saved = prefs.getStringSet("important_apps_ignore", emptySet()).orEmpty()
                 val selected = apps.map { it.first in saved }.toBooleanArray()
-                val labels = apps.map { it.second + "\\n" + it.first }.toTypedArray()
+                val labels = apps.map { it.second + "\n" + it.first }.toTypedArray()
                 runOnUiThread {
                     if (apps.isEmpty()) {
                         status.text = "No launcher apps were found to add to the ignore list."
@@ -407,7 +407,7 @@ class MainActivity : Activity() {
                         .setPositiveButton("Save") { _, _ ->
                             val protected = apps.indices.filter { selected[it] }.map { apps[it].first }.toSet()
                             prefs.edit().putStringSet("important_apps_ignore", protected).apply()
-                            status.text = "IMPORTANT APPS IGNORE LIST\\n\\nSaved ${protected.size} protected app(s). These apps will be marked as protected in the activity report and excluded from future Nice Antivirus app-management recommendations. Android itself may still manage apps normally."
+                            status.text = "IMPORTANT APPS IGNORE LIST\n\nSaved ${protected.size} protected app(s). These apps will be marked as protected in the activity report and excluded from future Nice Antivirus app-management recommendations. Android itself may still manage apps normally."
                             scanCount.text = "${protected.size} important app(s) protected"
                         }
                         .setNeutralButton("Clear all") { _, _ ->
@@ -456,9 +456,9 @@ class MainActivity : Activity() {
             .putBoolean("scheduled_activity_monitor_enabled", true).apply()
         val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        status.text = "AUTOMATIC APP ACTIVITY MONITOR SCHEDULED\\n\\nWorkManager checks usage changes periodically, with a 15-minute minimum interval. Android may defer work because of Doze mode, battery restrictions or device policy. " +
+        status.text = "AUTOMATIC APP ACTIVITY MONITOR SCHEDULED\n\nWorkManager checks usage changes periodically, with a 15-minute minimum interval. Android may defer work because of Doze mode, battery restrictions or device policy. " +
             (if (notificationsAllowed) "Activity summaries can appear as notifications." else "Notifications are currently not permitted; enable them in Permission Setup to receive alerts.") +
-            "\\n\\nThis reports foreground app usage changes only. It does not detect malware, downloads, uploads or background processes, and it never closes apps."
+            "\n\nThis reports foreground app usage changes only. It does not detect malware, downloads, uploads or background processes, and it never closes apps."
         scanCount.text = "Scheduled monitoring enabled"
     }
 
@@ -481,13 +481,13 @@ class MainActivity : Activity() {
         } else false
         val monitorEnabled = getSharedPreferences("nice_antivirus_settings", MODE_PRIVATE)
             .getBoolean("scheduled_activity_monitor_enabled", false)
-        val report = "NICE ANTIVIRUS • PERMISSION CENTER\\n\\n" +
-            "Usage Access: " + (if (usageGranted) "GRANTED" else "NOT GRANTED") + "\\n" +
-            "Notifications: " + (if (notificationsEnabled) "ENABLED" else if (!notificationGranted) "PERMISSION NOT GRANTED" else "BLOCKED IN APP SETTINGS") + "\\n" +
-            "Battery optimization: " + (if (Build.VERSION.SDK_INT < 23) "NOT APPLICABLE" else if (batteryOptimized) "ACTIVE (background work may be delayed)" else "IGNORED FOR THIS APP") + "\\n" +
-            "Scheduled monitor: " + (if (monitorEnabled) "ENABLED" else "DISABLED") + "\\n\\n" +
-            "Usage Access supports recent foreground-usage reports. It cannot identify downloads/uploads, prove malware or force-stop apps.\\n\\n" +
-            "Notifications are optional alerts. Battery optimization can delay scheduled checks; exempting this app is optional and may increase battery use.\\n\\n" +
+        val report = "NICE ANTIVIRUS • PERMISSION CENTER\n\n" +
+            "Usage Access: " + (if (usageGranted) "GRANTED" else "NOT GRANTED") + "\n" +
+            "Notifications: " + (if (notificationsEnabled) "ENABLED" else if (!notificationGranted) "PERMISSION NOT GRANTED" else "BLOCKED IN APP SETTINGS") + "\n" +
+            "Battery optimization: " + (if (Build.VERSION.SDK_INT < 23) "NOT APPLICABLE" else if (batteryOptimized) "ACTIVE (background work may be delayed)" else "IGNORED FOR THIS APP") + "\n" +
+            "Scheduled monitor: " + (if (monitorEnabled) "ENABLED" else "DISABLED") + "\n\n" +
+            "Usage Access supports recent foreground-usage reports. It cannot identify downloads/uploads, prove malware or force-stop apps.\n\n" +
+            "Notifications are optional alerts. Battery optimization can delay scheduled checks; exempting this app is optional and may increase battery use.\n\n" +
             "Only enable permissions you understand. Nice Antivirus does not need SMS, contacts, camera, accessibility or device-admin access."
         AlertDialog.Builder(this)
             .setTitle("Permission Setup")
@@ -544,9 +544,9 @@ class MainActivity : Activity() {
             val sorted = apps.distinctBy { it.second }.sortedBy { it.first.lowercase() }
             runOnUiThread {
                 scanCount.text = sorted.size.toString() + " apps available for review"
-                status.text = "BACKGROUND APP MANAGER\\n\\nChoose an app to open its Android App Info page. Android will let you decide whether to force stop it."
+                status.text = "BACKGROUND APP MANAGER\n\nChoose an app to open its Android App Info page. Android will let you decide whether to force stop it."
                 if (sorted.isEmpty()) {
-                    status.append("\\nNo launcher apps were found.")
+                    status.append("\nNo launcher apps were found.")
                 } else {
                     AlertDialog.Builder(this)
                         .setTitle("Select app • manual control")
@@ -606,13 +606,13 @@ class MainActivity : Activity() {
                 else if (freePercent < 20.0) advice.add("Storage is getting low: keep more free space for smooth app updates and temporary files.")
                 if (thermal == "Severe" || thermal == "Critical" || thermal == "Emergency" || thermal == "Shutdown risk") advice.add("Device is hot: stop heavy tasks, unplug charging if safe, and let it cool in a ventilated place.")
                 if (advice.isEmpty()) advice.add("No major low-memory, low-storage or thermal warning was reported by Android. Slowness can still be caused by a specific app, old hardware or background activity.")
-                val report = "PERFORMANCE CHECK\\n\\n" +
-                    "Available RAM: " + Formatter.formatFileSize(this, memory.availMem) + " / " + Formatter.formatFileSize(this, memory.totalMem) + "\\n" +
-                    "System low-memory flag: " + memory.lowMemory + "\\n" +
-                    "Free internal storage: " + Formatter.formatFileSize(this, freeBytes) + " (" + String.format(java.util.Locale.US, "%.1f", freePercent) + "%)\\n" +
-                    "Nice Antivirus temporary cache: " + Formatter.formatFileSize(this, cacheBytes) + "\\n" +
-                    "Device thermal status: " + thermal + "\\n\\nRECOMMENDATIONS\\n• " + advice.joinToString("\\n• ") +
-                    "\\n\\nOnly Nice Antivirus temporary cache can be cleared here. Other apps data/cache and system processes are not touched."
+                val report = "PERFORMANCE CHECK\n\n" +
+                    "Available RAM: " + Formatter.formatFileSize(this, memory.availMem) + " / " + Formatter.formatFileSize(this, memory.totalMem) + "\n" +
+                    "System low-memory flag: " + memory.lowMemory + "\n" +
+                    "Free internal storage: " + Formatter.formatFileSize(this, freeBytes) + " (" + String.format(java.util.Locale.US, "%.1f", freePercent) + "%)\n" +
+                    "Nice Antivirus temporary cache: " + Formatter.formatFileSize(this, cacheBytes) + "\n" +
+                    "Device thermal status: " + thermal + "\n\nRECOMMENDATIONS\n• " + advice.joinToString("\n• ") +
+                    "\n\nOnly Nice Antivirus temporary cache can be cleared here. Other apps data/cache and system processes are not touched."
                 runOnUiThread {
                     status.text = report
                     scanCount.text = "Performance check complete"
@@ -649,7 +649,7 @@ class MainActivity : Activity() {
             clearChildren(cacheDir)
             clearChildren(externalCacheDir)
             runOnUiThread {
-                status.text = "PERFORMANCE CLEANUP COMPLETE\\n\\nRemoved " + Formatter.formatFileSize(this, removed) + " from Nice Antivirus temporary cache only. Your personal files, quarantine, signature database and other apps were not changed."
+                status.text = "PERFORMANCE CLEANUP COMPLETE\n\nRemoved " + Formatter.formatFileSize(this, removed) + " from Nice Antivirus temporary cache only. Your personal files, quarantine, signature database and other apps were not changed."
                 scanCount.text = "App temporary cache cleaned"
             }
         }
@@ -686,22 +686,22 @@ class MainActivity : Activity() {
             }
             val totalBytes = files.sumOf { it.length().coerceAtLeast(0L) }
             val lines = StringBuilder()
-            lines.append("FILES FOUND: ").append(files.size).append(if (visited >= 10000) " (scan limit reached)" else "").append("\\n")
-            lines.append("TOTAL SIZE: ").append(formatBytes(totalBytes)).append("\\n")
-            lines.append("REVIEW CANDIDATES: ").append(candidates.size).append("\\n\\n")
-            lines.append("LARGEST FILES (top 20)\\n")
-            largest.forEach { file -> lines.append("• ").append(file.name ?: "Unnamed").append(" — ").append(formatBytes(file.length())).append("\\n") }
-            lines.append("\\nPOSSIBLE JUNK — REVIEW ONLY\\n")
+            lines.append("FILES FOUND: ").append(files.size).append(if (visited >= 10000) " (scan limit reached)" else "").append("\n")
+            lines.append("TOTAL SIZE: ").append(formatBytes(totalBytes)).append("\n")
+            lines.append("REVIEW CANDIDATES: ").append(candidates.size).append("\n\n")
+            lines.append("LARGEST FILES (top 20)\n")
+            largest.forEach { file -> lines.append("• ").append(file.name ?: "Unnamed").append(" — ").append(formatBytes(file.length())).append("\n") }
+            lines.append("\nPOSSIBLE JUNK — REVIEW ONLY\n")
             candidates.take(40).forEach { file ->
                 val name = file.name ?: "Unnamed"
                 val reason = if (file.length() == 0L) "empty file" else "temporary/backup/log-like filename"
-                lines.append("• ").append(name).append(" — ").append(formatBytes(file.length())).append(" (").append(reason).append(")\\n")
+                lines.append("• ").append(name).append(" — ").append(formatBytes(file.length())).append(" (").append(reason).append(")\n")
             }
-            if (candidates.size > 40) lines.append("…and ").append(candidates.size - 40).append(" more candidates\\n")
-            lines.append("\\nNothing was deleted. Review candidates manually; logs and backups may contain important data. .bin files are not treated as junk by extension alone.")
+            if (candidates.size > 40) lines.append("…and ").append(candidates.size - 40).append(" more candidates\n")
+            lines.append("\nNothing was deleted. Review candidates manually; logs and backups may contain important data. .bin files are not treated as junk by extension alone.")
             runOnUiThread {
                 scanCount.text = files.size.toString() + " files analyzed • " + candidates.size + " review candidates"
-                status.text = "STORAGE ANALYSIS\\n\\n" + lines.toString()
+                status.text = "STORAGE ANALYSIS\n\n" + lines.toString()
             }
         }
     }
@@ -724,13 +724,13 @@ class MainActivity : Activity() {
             val total = stat.totalBytes
             val available = stat.availableBytes
             val used = (total - available).coerceAtLeast(0L)
-            status.text = "DEVICE HEALTH\\n\\n" +
-                "RAM total: " + Formatter.formatFileSize(this, memory.totalMem) + "\\n" +
-                "RAM available: " + Formatter.formatFileSize(this, memory.availMem) + "\\n" +
-                "Low-memory state: " + memory.lowMemory + "\\n\\n" +
-                "App data volume total: " + Formatter.formatFileSize(this, total) + "\\n" +
-                "App data volume used: " + Formatter.formatFileSize(this, used) + "\\n" +
-                "App data volume available: " + Formatter.formatFileSize(this, available) + "\\n\\n" +
+            status.text = "DEVICE HEALTH\n\n" +
+                "RAM total: " + Formatter.formatFileSize(this, memory.totalMem) + "\n" +
+                "RAM available: " + Formatter.formatFileSize(this, memory.availMem) + "\n" +
+                "Low-memory state: " + memory.lowMemory + "\n\n" +
+                "App data volume total: " + Formatter.formatFileSize(this, total) + "\n" +
+                "App data volume used: " + Formatter.formatFileSize(this, used) + "\n" +
+                "App data volume available: " + Formatter.formatFileSize(this, available) + "\n\n" +
                 "Android does not allow ordinary apps to clear other apps private caches or force-free their RAM. Storage figures above describe the volume containing this app; choose a shared folder in Storage Analyzer for user-file analysis."
             scanCount.text = if (memory.lowMemory) "System reports low memory" else "Device memory status updated"
         } catch (error: Exception) {
@@ -746,14 +746,14 @@ class MainActivity : Activity() {
                 val result = Python.getInstance().getModule("antivirus.updater")
                     .callAttr("update_database", File(filesDir, "signatures.db").absolutePath).toString()
                 runOnUiThread {
-                    status.text = "VIRUS DATABASE UPDATE\\n\\n" + result
+                    status.text = "VIRUS DATABASE UPDATE\n\n" + result
                     scanCount.text = "Database update finished"
                 }
             } catch (error: Exception) {
                 val message = error.localizedMessage ?: "unknown error"
                 runOnUiThread {
-                    status.text = "SECURE UPDATE NOT AVAILABLE\\n\\n" + message +
-                        "\\n\\nUpdates remain disabled until the official HTTPS manifest URL and publisher public key are configured. No unverified database was installed."
+                    status.text = "SECURE UPDATE NOT AVAILABLE\n\n" + message +
+                        "\n\nUpdates remain disabled until the official HTTPS manifest URL and publisher public key are configured. No unverified database was installed."
                     scanCount.text = "Update not installed"
                 }
             }
@@ -960,7 +960,7 @@ class MainActivity : Activity() {
                     .callAttr("scan_history_report", File(filesDir, "signatures.db").absolutePath, 50)
                     .toString()
                 runOnUiThread {
-                    status.text = report + "\\n\\nHistory is stored locally in the app database. It records scan status and a short SHA-256 prefix; it does not mean a no-match file is guaranteed safe."
+                    status.text = report + "\n\nHistory is stored locally in the app database. It records scan status and a short SHA-256 prefix; it does not mean a no-match file is guaranteed safe."
                     scanCount.text = "Recent scan history"
                 }
             } catch (error: Exception) {

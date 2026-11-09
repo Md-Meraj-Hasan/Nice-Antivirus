@@ -2,11 +2,14 @@ package com.meraj.niceantivirus
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.ActivityManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.net.Uri
 import android.os.Bundle
+import android.os.StatFs
+import android.text.format.Formatter
 import android.graphics.Color
 import android.view.Gravity
 import android.view.ViewGroup
@@ -27,6 +30,7 @@ class MainActivity : Activity() {
     private val pickFileRequest = 4101
     private val pickFolderRequest = 4102
     private val restoreRequest = 4103
+    private val storageRequest = 4104
     private var restoreFile: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,11 +80,11 @@ class MainActivity : Activity() {
         addButton(content, "SCAN FILE / APK") { chooseFile() }
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
         addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
+        addButton(content, "ANALYZE STORAGE / JUNK") { chooseStorageFolder() }
+        addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
         addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
         addButton(content, "QUARANTINE / RESTORE") { showQuarantine() }
-        addButton(content, "VIRUS DATABASE UPDATE") {
-            status.text = "Updater framework is available. Live updates are not enabled until the trusted publisher key and official HTTPS manifest URL are configured."
-        }
+        addButton(content, "VIRUS DATABASE UPDATE") { updateVirusDatabase() }
         content.addView(TextView(this).apply {
             text = "Safety note: no files are automatically deleted. A clean result means no match in the installed signature database, not a guarantee that a file is safe."
             textSize = 12f
@@ -121,6 +125,10 @@ class MainActivity : Activity() {
             scanFolder(uri)
         } else if (requestCode == pickFileRequest) {
             scanUris(listOf(uri))
+        } else if (requestCode == storageRequest) {
+            val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) {}
+            analyzeStorageTree(uri)
         } else if (requestCode == restoreRequest) {
             val source = restoreFile
             restoreFile = null
@@ -226,6 +234,111 @@ class MainActivity : Activity() {
     }
 
 
+
+    private fun chooseStorageFolder() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), storageRequest)
+    }
+
+    private fun analyzeStorageTree(treeUri: Uri) {
+        status.text = "Analyzing selected storage folder…"
+        scanCount.text = "Storage analysis running…"
+        worker.execute {
+            val root = DocumentFile.fromTreeUri(this, treeUri)
+            val files = mutableListOf<DocumentFile>()
+            var visited = 0
+            fun walk(directory: DocumentFile, depth: Int) {
+                if (depth > 20 || visited >= 10000) return
+                val children = try { directory.listFiles() } catch (_: Exception) { emptyArray() }
+                children.forEach { child ->
+                    if (visited >= 10000) return@forEach
+                    visited++
+                    if (child.isDirectory) walk(child, depth + 1)
+                    else if (child.isFile) files.add(child)
+                }
+            }
+            if (root != null && root.isDirectory) walk(root, 0)
+            val largest = files.sortedByDescending { it.length() }.take(20)
+            val junkExtensions = setOf(".tmp", ".temp", ".bak", ".old", ".dmp", ".log")
+            val candidates = files.filter { file ->
+                val name = (file.name ?: "").lowercase()
+                val ext = name.substringAfterLast(".", "").let { if (it.isEmpty()) "" else ".$it" }
+                file.length() == 0L || ext in junkExtensions || name == "thumbs.db" || name.endsWith("~")
+            }
+            val totalBytes = files.sumOf { it.length().coerceAtLeast(0L) }
+            val lines = StringBuilder()
+            lines.append("FILES FOUND: ").append(files.size).append(if (visited >= 10000) " (scan limit reached)" else "").append("\\n")
+            lines.append("TOTAL SIZE: ").append(formatBytes(totalBytes)).append("\\n")
+            lines.append("REVIEW CANDIDATES: ").append(candidates.size).append("\\n\\n")
+            lines.append("LARGEST FILES (top 20)\\n")
+            largest.forEach { file -> lines.append("• ").append(file.name ?: "Unnamed").append(" — ").append(formatBytes(file.length())).append("\\n") }
+            lines.append("\\nPOSSIBLE JUNK — REVIEW ONLY\\n")
+            candidates.take(40).forEach { file ->
+                val name = file.name ?: "Unnamed"
+                val reason = if (file.length() == 0L) "empty file" else "temporary/backup/log-like filename"
+                lines.append("• ").append(name).append(" — ").append(formatBytes(file.length())).append(" (").append(reason).append(")\\n")
+            }
+            if (candidates.size > 40) lines.append("…and ").append(candidates.size - 40).append(" more candidates\\n")
+            lines.append("\\nNothing was deleted. Review candidates manually; logs and backups may contain important data. .bin files are not treated as junk by extension alone.")
+            runOnUiThread {
+                scanCount.text = files.size.toString() + " files analyzed • " + candidates.size + " review candidates"
+                status.text = "STORAGE ANALYSIS\\n\\n" + lines.toString()
+            }
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024L) return "$bytes B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var value = bytes.toDouble()
+        var index = -1
+        do { value /= 1024.0; index++ } while (value >= 1024.0 && index < units.lastIndex)
+        return String.format(java.util.Locale.US, "%.2f %s", value, units[index])
+    }
+
+    private fun showDeviceHealth() {
+        try {
+            val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+            val memory = ActivityManager.MemoryInfo()
+            manager.getMemoryInfo(memory)
+            val stat = StatFs(filesDir.absolutePath)
+            val total = stat.totalBytes
+            val available = stat.availableBytes
+            val used = (total - available).coerceAtLeast(0L)
+            status.text = "DEVICE HEALTH\\n\\n" +
+                "RAM total: " + Formatter.formatFileSize(this, memory.totalMem) + "\\n" +
+                "RAM available: " + Formatter.formatFileSize(this, memory.availMem) + "\\n" +
+                "Low-memory state: " + memory.lowMemory + "\\n\\n" +
+                "App data volume total: " + Formatter.formatFileSize(this, total) + "\\n" +
+                "App data volume used: " + Formatter.formatFileSize(this, used) + "\\n" +
+                "App data volume available: " + Formatter.formatFileSize(this, available) + "\\n\\n" +
+                "Android does not allow ordinary apps to clear other apps private caches or force-free their RAM. Storage figures above describe the volume containing this app; choose a shared folder in Storage Analyzer for user-file analysis."
+            scanCount.text = if (memory.lowMemory) "System reports low memory" else "Device memory status updated"
+        } catch (error: Exception) {
+            status.text = "Device health check failed: " + (error.localizedMessage ?: "unknown error")
+        }
+    }
+
+    private fun updateVirusDatabase() {
+        status.text = "Checking signed virus database update…"
+        scanCount.text = "Secure update check running…"
+        worker.execute {
+            try {
+                val result = Python.getInstance().getModule("antivirus.updater")
+                    .callAttr("update_database", File(filesDir, "signatures.db").absolutePath).toString()
+                runOnUiThread {
+                    status.text = "VIRUS DATABASE UPDATE\\n\\n" + result
+                    scanCount.text = "Database update finished"
+                }
+            } catch (error: Exception) {
+                val message = error.localizedMessage ?: "unknown error"
+                runOnUiThread {
+                    status.text = "SECURE UPDATE NOT AVAILABLE\\n\\n" + message +
+                        "\\n\\nUpdates remain disabled until the official HTTPS manifest URL and publisher public key are configured. No unverified database was installed."
+                    scanCount.text = "Update not installed"
+                }
+            }
+        }
+    }
 
     private fun showQuarantine() {
         val folder = File(filesDir, "quarantine")

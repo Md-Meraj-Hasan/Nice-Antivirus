@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     private val exportHistoryRequest = 4105
     private var restoreFile: File? = null
     private var refreshPermissionsOnResume = false
+    @Volatile private var scanCancelled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,6 +90,7 @@ class MainActivity : Activity() {
         content.addView(status, matchWrap())
         addButton(content, "SCAN FILE / APK") { chooseFile() }
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
+        addButton(content, "CANCEL CURRENT SCAN") { cancelCurrentScan() }
         addButton(content, "SCAN HISTORY") { showScanHistory() }
         addButton(content, "DUPLICATE CONTENT REVIEW") { showDuplicateContentReview() }
         addButton(content, "EXPORT SCAN REPORT") { exportScanHistory() }
@@ -219,7 +221,13 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun cancelCurrentScan() {
+        scanCancelled = true
+        status.text = "Scan cancellation requested. The current file will finish before the next file is skipped."
+    }
+
     private fun scanUris(uris: List<Uri>) {
+        scanCancelled = false
         runOnUiThread {
             status.text = "Preparing scan of " + uris.size + " item(s)…"
             scanCount.text = "Scanning…"
@@ -231,7 +239,8 @@ class MainActivity : Activity() {
             val python = Python.getInstance().getModule("antivirus.scanner")
             val cache = File(cacheDir, "scan")
             cache.mkdirs()
-            uris.forEachIndexed { index, uri ->
+            for ((index, uri) in uris.withIndex()) {
+                if (scanCancelled) break
                 try {
                     val name = queryDisplayName(uri) ?: "selected_file"
                     val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
@@ -254,11 +263,14 @@ class MainActivity : Activity() {
                 val done = index + 1
                 runOnUiThread { scanCount.text = done.toString() + " / " + uris.size + " scanned  •  " + threats + " threat matches" }
             }
+            val wasCancelled = scanCancelled
+            scanCancelled = false
             val summary = results.take(40).joinToString("\n\n")
             runOnUiThread {
-                status.text = "SCAN FINISHED\n\n" + summary +
+                status.text = (if (wasCancelled) "SCAN CANCELLED" else "SCAN FINISHED") + "\n\n" + summary +
                     if (results.size > 40) "\n\n…and " + (results.size - 40) + " more items." else ""
-                scanCount.text = results.size.toString() + " files scanned  •  " + threats + " threat matches"
+                if (wasCancelled) status.append("\n\nRemaining files were not scanned.")
+                scanCount.text = results.size.toString() + " / " + uris.size + " files processed  •  " + threats + " threat matches"
                 if (detectedTemps.isNotEmpty()) {
                     AlertDialog.Builder(this)
                         .setTitle("Threat matches found")

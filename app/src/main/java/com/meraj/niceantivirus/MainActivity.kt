@@ -981,7 +981,7 @@ class MainActivity : Activity() {
                     .callAttr("duplicate_content_report", File(filesDir, "signatures.db").absolutePath, 200)
                     .toString()
                 runOnUiThread {
-                    status.text = report + "\\n\\nThis is a read-only review of the latest 200 saved scan records, not a full-device duplicate search."
+                    status.text = report + "\n\nThis is a read-only review of the latest 200 saved scan records, not a full-device duplicate search."
                     scanCount.text = "Repeated content review"
                 }
             } catch (error: Exception) {

@@ -201,10 +201,10 @@ def scan_local_file(path: str, db_path: str, display_path: str = "") -> str:
         report += "\nNote: this mismatch is not a malware verdict."
     archive = result.get("archive_review")
     if archive is not None:
-        report += "\\nARCHIVE REVIEW: " + archive.get("status", "unknown")
+        report += "\nARCHIVE REVIEW: " + archive.get("status", "unknown")
         for indicator in archive.get("review_indicators", []):
-            report += "\\n- " + indicator["detail"]
-        report += "\\nNote: archive metadata review is not a malware verdict."
+            report += "\n- " + indicator["detail"]
+        report += "\nNote: archive metadata review is not a malware verdict."
     apk = result.get("apk_review")
     if apk is not None:
         report += "\nAPK container: " + apk.get("status", "unknown")

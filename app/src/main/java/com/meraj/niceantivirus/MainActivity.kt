@@ -69,8 +69,14 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(15), dp(7), dp(15), dp(5))
+            gravity = Gravity.TOP
+            setPadding(dp(15), dp(4), dp(15), dp(4))
             setBackgroundColor(Color.rgb(6, 13, 24))
+        }
+        // Compact scrollable content column; bottom navigation stays pinned.
+        val contentColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.TOP
         }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -110,7 +116,7 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = rounded(Color.rgb(13, 48, 44), dp(20))
         }, matchWrap())
-        root.addView(top, matchWrap())
+        contentColumn.addView(top, matchWrap())
 
         val progressPanel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -154,7 +160,7 @@ class MainActivity : Activity() {
         }
         progressInfo.addView(threatFilesLabel, matchWrap())
         progressPanel.addView(progressInfo, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(progressPanel, LinearLayout.LayoutParams(
+        contentColumn.addView(progressPanel, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(104)
         ))
 
@@ -184,25 +190,27 @@ class MainActivity : Activity() {
                     .show()
             }
         }
-        root.addView(scanCount, matchWrap())
-        root.addView(status, matchWrap())
+        contentColumn.addView(scanCount, matchWrap())
+        contentColumn.addView(status, matchWrap())
 
         pageContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(5), 0, dp(5))
         }
-        // Keep the bottom navigation fixed while allowing every section's
-        // heading, hero cards and tool tiles to scroll on short phone screens.
-        val pageScroll = ScrollView(this).apply {
-            isFillViewport = true
+        contentColumn.addView(pageContainer, matchWrap())
+        // Header, progress, activity and section tools share one compact
+        // scroll area, so the tool cards are not pushed below unused space.
+        val contentScroll = ScrollView(this).apply {
+            isFillViewport = false
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            addView(pageContainer, ViewGroup.LayoutParams(
+            clipToPadding = false
+            addView(contentColumn, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
-        root.addView(pageScroll, LinearLayout.LayoutParams(
+        root.addView(contentScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
 

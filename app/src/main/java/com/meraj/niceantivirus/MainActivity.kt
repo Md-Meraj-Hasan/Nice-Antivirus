@@ -376,36 +376,45 @@ class MainActivity : Activity() {
         items: List<Pair<String, () -> Unit>>,
         tileHeight: Int
     ) {
-        items.chunked(2).forEach { pair ->
+        items.chunked(2).forEachIndexed { rowIndex, pair ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             pair.forEachIndexed { index, item ->
-                val accent = when {
-                    item.first.contains("SCAN") -> Color.rgb(54, 222, 174)
-                    item.first.contains("REPORT") || item.first.contains("HISTORY") -> Color.rgb(112, 174, 255)
-                    item.first.contains("STORAGE") || item.first.contains("RAM") -> Color.rgb(255, 190, 105)
-                    item.first.contains("PERMISSION") || item.first.contains("APP") -> Color.rgb(185, 151, 255)
-                    else -> Color.rgb(82, 203, 221)
+                val key = item.first
+                val palette = when {
+                    key.contains("SCAN") -> intArrayOf(Color.rgb(12, 126, 111), Color.rgb(37, 204, 165), Color.rgb(8, 75, 73))
+                    key.contains("QUARANTINE") || key.contains("PROTECTED") -> intArrayOf(Color.rgb(113, 57, 143), Color.rgb(205, 128, 255), Color.rgb(68, 35, 101))
+                    key.contains("HISTORY") || key.contains("REPORT") || key.contains("DUPLICATE") -> intArrayOf(Color.rgb(38, 91, 164), Color.rgb(117, 177, 255), Color.rgb(25, 54, 111))
+                    key.contains("STORAGE") || key.contains("RAM") -> intArrayOf(Color.rgb(155, 91, 27), Color.rgb(255, 190, 92), Color.rgb(101, 57, 20))
+                    key.contains("PERFORMANCE") || key.contains("BACKGROUND") -> intArrayOf(Color.rgb(151, 70, 43), Color.rgb(255, 145, 102), Color.rgb(104, 43, 32))
+                    key.contains("PERMISSION") || key.contains("APP") -> intArrayOf(Color.rgb(103, 72, 157), Color.rgb(191, 163, 255), Color.rgb(57, 43, 111))
+                    key.contains("MONITOR") -> intArrayOf(Color.rgb(25, 111, 144), Color.rgb(92, 213, 235), Color.rgb(18, 66, 100))
+                    key.contains("CHECK") || key.contains("DATABASE") -> intArrayOf(Color.rgb(37, 105, 123), Color.rgb(104, 221, 226), Color.rgb(20, 66, 85))
+                    else -> intArrayOf(Color.rgb(60, 86, 112), Color.rgb(157, 190, 220), Color.rgb(34, 53, 76))
                 }
+                val base = palette[0]
+                val accent = palette[1]
+                val deep = palette[2]
                 val icon = when {
-                    item.first.contains("SCAN") -> "⌕"
-                    item.first.contains("QUARANTINE") -> "▣"
-                    item.first.contains("HISTORY") || item.first.contains("REPORT") -> "▤"
-                    item.first.contains("DUPLICATE") -> "⧉"
-                    item.first.contains("STORAGE") -> "▦"
-                    item.first.contains("RAM") -> "◉"
-                    item.first.contains("PERFORMANCE") -> "ϟ"
-                    item.first.contains("APP") -> "◈"
-                    item.first.contains("PERMISSION") -> "◇"
-                    item.first.contains("MONITOR") -> "◷"
-                    item.first.contains("CHECK") -> "✓"
-                    item.first.contains("DATABASE") -> "⬡"
+                    key.contains("SCAN") -> "⌕"
+                    key.contains("QUARANTINE") -> "▣"
+                    key.contains("HISTORY") || key.contains("REPORT") -> "▤"
+                    key.contains("DUPLICATE") -> "⧉"
+                    key.contains("STORAGE") -> "▦"
+                    key.contains("RAM") -> "◉"
+                    key.contains("PERFORMANCE") -> "ϟ"
+                    key.contains("APP") -> "◈"
+                    key.contains("PERMISSION") -> "◇"
+                    key.contains("MONITOR") -> "◷"
+                    key.contains("CHECK") -> "✓"
+                    key.contains("DATABASE") -> "⬡"
                     else -> "›"
                 }
                 val tile = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(11), dp(7), dp(7), dp(7))
-                    background = rounded(Color.rgb(18, 31, 48), dp(14))
+                    setPadding(dp(9), dp(7), dp(7), dp(7))
+                    background = rounded(base, dp(14))
+                    elevation = dp(2).toFloat()
                     isClickable = true
                     isFocusable = true
                     setOnClickListener { item.second() }
@@ -414,18 +423,24 @@ class MainActivity : Activity() {
                     text = icon
                     textSize = 23f
                     gravity = Gravity.CENTER
-                    setTextColor(accent)
-                    background = rounded(Color.rgb(29, 44, 61), dp(10))
-                }, LinearLayout.LayoutParams(dp(39), dp(39)))
+                    setTextColor(Color.WHITE)
+                    background = rounded(deep, dp(11))
+                }, LinearLayout.LayoutParams(dp(40), dp(40)))
                 tile.addView(TextView(this).apply {
-                    text = item.first
+                    text = key
                     textSize = 10f
                     maxLines = 2
                     setLineSpacing(dp(2).toFloat(), 1f)
                     setTypeface(null, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.rgb(222, 232, 242))
+                    setTextColor(Color.WHITE)
                     setPadding(dp(8), 0, 0, 0)
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                tile.addView(TextView(this).apply {
+                    text = "›"
+                    textSize = 19f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(accent)
+                }, LinearLayout.LayoutParams(dp(15), ViewGroup.LayoutParams.WRAP_CONTENT))
                 row.addView(tile, LinearLayout.LayoutParams(0, dp(tileHeight), 1f).apply {
                     if (index == 0) marginEnd = dp(6) else marginStart = dp(1)
                 })

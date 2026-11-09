@@ -7,6 +7,7 @@ import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.PackageInfo
 import android.os.Build
 import android.net.Uri
 import android.os.Bundle

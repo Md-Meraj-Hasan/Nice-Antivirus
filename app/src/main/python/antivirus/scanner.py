@@ -4,6 +4,8 @@ Only exact SHA-256 matches from the local database are detections. APK
 container inspection is structural metadata review, not a malware verdict.
 No file is modified or deleted.
 """
+from __future__ import annotations
+
 from pathlib import Path
 import hashlib
 import json

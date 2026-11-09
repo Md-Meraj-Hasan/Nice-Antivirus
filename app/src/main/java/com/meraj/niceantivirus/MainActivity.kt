@@ -91,6 +91,7 @@ class MainActivity : Activity() {
         addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
         addButton(content, "SCAN HISTORY") { showScanHistory() }
         addButton(content, "EXPORT SCAN REPORT") { exportScanHistory() }
+        addButton(content, "CLEAR SCAN HISTORY") { confirmClearScanHistory() }
         addButton(content, "SCAN INSTALLED APPS") { scanInstalledApps() }
         addButton(content, "ANALYZE STORAGE / JUNK") { chooseStorageFolder() }
         addButton(content, "RAM & STORAGE STATUS") { showDeviceHealth() }
@@ -969,6 +970,32 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun confirmClearScanHistory() {
+        AlertDialog.Builder(this)
+            .setTitle("Clear scan history?")
+            .setMessage("This permanently removes only saved scan-history records from this app. Virus signatures, signature database version, and quarantined files will NOT be deleted. Export the report first if you need a copy.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Clear history") { _, _ ->
+                status.text = "Clearing scan history…"
+                worker.execute {
+                    try {
+                        val removed = Python.getInstance().getModule("antivirus.scanner")
+                            .callAttr("clear_scan_history_records", File(filesDir, "signatures.db").absolutePath)
+                            .toInt()
+                        runOnUiThread {
+                            status.text = "Scan history cleared. " + removed + " record(s) removed. Signatures and quarantine were preserved."
+                            scanCount.text = "Scan history empty"
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            status.text = "Could not clear scan history: " + (error.localizedMessage ?: "unknown error")
+                        }
+                    }
+                }
+            }
+            .show()
     }
 
     private fun exportScanHistory() {

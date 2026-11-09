@@ -66,3 +66,10 @@ def recent_scans(connection: sqlite3.Connection, limit: int = 50) -> list[dict]:
         {"path": row[0], "sha256": row[1], "status": row[2], "scanned_at": row[3]}
         for row in rows
     ]
+
+
+def clear_scan_history(connection: sqlite3.Connection) -> int:
+    """Delete scan-history rows only; preserve signatures and metadata."""
+    cursor = connection.execute("DELETE FROM scan_history")
+    connection.commit()
+    return cursor.rowcount

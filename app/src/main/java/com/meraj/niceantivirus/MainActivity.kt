@@ -19,6 +19,7 @@ import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var scanCount: TextView
     private val worker = Executors.newSingleThreadExecutor()
     private val pickFileRequest = 4101
     private val pickFolderRequest = 4102
@@ -28,35 +29,57 @@ class MainActivity : Activity() {
         if (!Python.isStarted()) Python.start(AndroidPlatform(this))
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 40, 32, 32)
-            setBackgroundColor(Color.rgb(16, 24, 32))
+            setPadding(24, 32, 24, 32)
+            setBackgroundColor(Color.rgb(12, 19, 27))
         }
-        content.addView(TextView(this).apply {
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(20, 28, 20, 28)
+            setBackgroundColor(Color.rgb(23, 39, 49))
+        }
+        hero.addView(TextView(this).apply {
             text = "NICE ANTIVIRUS"
             textSize = 27f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
         }, matchWrap())
-        content.addView(TextView(this).apply {
-            text = "MOBILE SECURITY • FILE ANALYSIS"
+        hero.addView(TextView(this).apply {
+            text = "SMART MOBILE SECURITY"
             textSize = 12f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(40, 199, 111))
-            setPadding(0, 12, 0, 28)
+            setTextColor(Color.rgb(40, 210, 125))
+            setPadding(0, 10, 0, 0)
         }, matchWrap())
+        content.addView(hero, matchWrap())
+        scanCount = TextView(this).apply {
+            text = "0 files scanned  •  0 threats matched"
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(40, 210, 125))
+            setPadding(0, 24, 0, 12)
+        }
+        content.addView(scanCount, matchWrap())
         status = TextView(this).apply {
-            text = "Protection engine ready. Choose a file or folder to scan."
-            textSize = 15f
+            text = "Protection engine ready. Select a file, APK, folder or SD card."
+            textSize = 14f
             setTextColor(Color.WHITE)
-            setPadding(0, 20, 0, 24)
+            setPadding(16, 18, 16, 18)
+            setBackgroundColor(Color.rgb(25, 34, 44))
         }
         content.addView(status, matchWrap())
-        addButton(content, "SCAN A FILE / APK") { chooseFile() }
-        addButton(content, "SCAN A FOLDER / SD CARD") { chooseFolder() }
-        addButton(content, "RUN ENGINE SELF-CHECK") { runSelfCheck() }
-        addButton(content, "SIGNATURE DATABASE UPDATE") {
-            status.text = "Online updater framework is present. Production updates remain locked until the trusted publisher signing key and official HTTPS manifest endpoint are configured."
+        addButton(content, "SCAN FILE / APK") { chooseFile() }
+        addButton(content, "SCAN FOLDER / SD CARD") { chooseFolder() }
+        addButton(content, "ENGINE SELF-CHECK") { runSelfCheck() }
+        addButton(content, "VIRUS DATABASE UPDATE") {
+            status.text = "Updater framework is available. Live updates are not enabled until the trusted publisher key and official HTTPS manifest URL are configured."
         }
+        content.addView(TextView(this).apply {
+            text = "Safety note: no files are automatically deleted. A clean result means no match in the installed signature database, not a guarantee that a file is safe."
+            textSize = 12f
+            setTextColor(Color.LTGRAY)
+            setPadding(4, 20, 4, 8)
+        }, matchWrap())
         setContentView(ScrollView(this).apply { addView(content) })
     }
 
@@ -65,7 +88,7 @@ class MainActivity : Activity() {
             text = label
             isAllCaps = false
             setOnClickListener { action() }
-        }, matchWrap().apply { bottomMargin = 12 })
+        }, matchWrap().apply { topMargin = 10 })
     }
 
     private fun chooseFile() {
@@ -95,7 +118,7 @@ class MainActivity : Activity() {
     }
 
     private fun scanFolder(treeUri: Uri) {
-        status.text = "Reading selected folder…"
+        runOnUiThread { status.text = "Reading selected folder…" }
         worker.execute {
             val files = mutableListOf<Uri>()
             val root = DocumentFile.fromTreeUri(this, treeUri)
@@ -112,13 +135,17 @@ class MainActivity : Activity() {
     }
 
     private fun scanUris(uris: List<Uri>) {
-        runOnUiThread { status.text = "Scanning " + uris.size + " selected item(s)…" }
+        runOnUiThread {
+            status.text = "Preparing scan of " + uris.size + " item(s)…"
+            scanCount.text = "Scanning…"
+        }
         worker.execute {
             val results = mutableListOf<String>()
+            var threats = 0
             val python = Python.getInstance().getModule("antivirus.scanner")
             val cache = File(cacheDir, "scan")
             cache.mkdirs()
-            uris.forEach { uri ->
+            uris.forEachIndexed { index, uri ->
                 try {
                     val name = queryDisplayName(uri) ?: "selected_file"
                     val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
@@ -127,16 +154,20 @@ class MainActivity : Activity() {
                         temp.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw IllegalStateException("Cannot open selected document")
                     val result = python.callAttr("scan_local_file", temp.absolutePath, File(filesDir, "signatures.db").absolutePath).toString()
+                    if (result.startsWith("THREAT MATCH:")) threats++
                     results.add(name + ": " + result)
                     temp.delete()
                 } catch (error: Exception) {
                     results.add(uri.toString() + ": ERROR - " + (error.localizedMessage ?: "unreadable"))
                 }
+                val done = index + 1
+                runOnUiThread { scanCount.text = done.toString() + " / " + uris.size + " scanned  •  " + threats + " threat matches" }
             }
-            val summary = results.take(30).joinToString("\n")
+            val summary = results.take(40).joinToString("\n\n")
             runOnUiThread {
-                status.text = "Scan complete: " + results.size + " item(s) checked.\n\n" + summary +
-                    if (results.size > 30) "\n…and " + (results.size - 30) + " more." else ""
+                status.text = "SCAN FINISHED\n\n" + summary +
+                    if (results.size > 40) "\n\n…and " + (results.size - 40) + " more items." else ""
+                scanCount.text = results.size.toString() + " files scanned  •  " + threats + " threat matches"
             }
         }
     }

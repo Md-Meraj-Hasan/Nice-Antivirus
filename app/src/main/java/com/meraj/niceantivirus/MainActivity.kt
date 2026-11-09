@@ -1271,7 +1271,7 @@ class MainActivity : Activity() {
                             "\nFree storage: " + Formatter.formatFileSize(this, freeBytes) +
                             "\n\nChoose a safe action. Other apps will not be killed automatically.")
                         .setNegativeButton("Close", null)
-                        .setNeutralButton("Android Storage") { _, _ ->
+                        .setNeutralButton("Manage Apps") { _, _ ->
                             try {
                                 startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS))
                             } catch (_: Exception) {

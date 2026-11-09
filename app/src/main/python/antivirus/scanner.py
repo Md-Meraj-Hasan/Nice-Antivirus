@@ -7,7 +7,7 @@ No file is modified or deleted.
 from pathlib import Path
 import hashlib
 from typing import Iterable
-from antivirus.database import connect, load_signatures
+from antivirus.database import connect, load_signatures, record_scan, recent_scans
 from antivirus.apk_analyzer import inspect_apk_container
 
 
@@ -43,10 +43,11 @@ def scan_paths(paths: Iterable[str], signatures: dict[str, dict]) -> list[dict]:
     return [inspect_file(path, signatures) for path in paths]
 
 
-def scan_local_file(path: str, db_path: str) -> str:
+def scan_local_file(path: str, db_path: str, display_path: str = "") -> str:
     connection = connect(db_path)
     try:
         result = inspect_file(path, load_signatures(connection))
+        record_scan(connection, display_path or Path(path).name, result.get("sha256"), result["status"])
     finally:
         connection.close()
     if result["status"] == "detected":
@@ -74,3 +75,22 @@ def engine_self_check() -> str:
         + "Detection mode: exact local signatures only\n"
         + "No files were changed."
     )
+
+
+def scan_history_report(db_path: str, limit: int = 50) -> str:
+    connection = connect(db_path)
+    try:
+        entries = recent_scans(connection, limit)
+    finally:
+        connection.close()
+    if not entries:
+        return "No scan history yet. Scan a file, APK or folder to create the first record."
+    lines = ["RECENT SCANS (newest first)"]
+    for item in entries:
+        digest = (item.get("sha256") or "")[:16]
+        lines.append(
+            item["scanned_at"] + " | " + item["status"].upper()
+            + "\\n" + item["path"]
+            + ("\\nSHA-256: " + digest + "…" if digest else "")
+        )
+    return "\\n\\n".join(lines)

@@ -190,7 +190,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(5), 0, dp(5))
         }
-        root.addView(pageContainer, LinearLayout.LayoutParams(
+        // Keep the bottom navigation fixed while allowing every section's
+        // heading, hero cards and tool tiles to scroll on short phone screens.
+        val pageScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(pageContainer, ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        root.addView(pageScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
 

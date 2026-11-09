@@ -45,3 +45,24 @@ def load_signatures(connection: sqlite3.Connection) -> dict[str, dict]:
         row[0]: {"label": row[1], "severity": row[2], "description": row[3]}
         for row in rows
     }
+
+
+def record_scan(connection: sqlite3.Connection, path: str, sha256: str | None, status: str) -> None:
+    connection.execute(
+        "INSERT INTO scan_history (path, sha256, status) VALUES (?, ?, ?)",
+        (str(path), sha256, str(status)),
+    )
+    connection.commit()
+
+
+def recent_scans(connection: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    safe_limit = max(1, min(int(limit), 200))
+    rows = connection.execute(
+        "SELECT path, sha256, status, scanned_at FROM scan_history "
+        "ORDER BY id DESC LIMIT ?",
+        (safe_limit,),
+    ).fetchall()
+    return [
+        {"path": row[0], "sha256": row[1], "status": row[2], "scanned_at": row[3]}
+        for row in rows
+    ]

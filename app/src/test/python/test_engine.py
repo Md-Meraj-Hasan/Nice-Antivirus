@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from antivirus.scanner import engine_self_check, inspect_file, scan_local_file, scan_history_report, duplicate_content_report
+from antivirus.scanner import engine_self_check, inspect_file, scan_local_file, scan_history_report, duplicate_content_report, diagnostics_report
 from antivirus.updater import validate_manifest, verify_signed_envelope, install_verified_manifest
 from antivirus.database import connect
 
@@ -275,6 +275,18 @@ class EngineTests(unittest.TestCase):
                 "version": 1,
                 "signatures": [{"sha256": "bad", "label": "x", "severity": "high"}],
             })
+
+    def test_tool_diagnostics_runs_isolated_checks(self):
+        report = diagnostics_report()
+        self.assertIn("NICE ANTIVIRUS — TOOL DIAGNOSTICS", report)
+        self.assertIn("[PASS] SHA-256 engine", report)
+        self.assertIn("[PASS] File scan + signature database + scan history", report)
+        self.assertIn("[PASS] APK structure analyzer", report)
+        self.assertIn("[PASS] ZIP archive review", report)
+        self.assertIn("[PASS] Storage cleanup analyzer", report)
+        self.assertIn("[PASS] Quarantine copy fingerprint", report)
+        self.assertIn("[PASS] Duplicate content report", report)
+        self.assertIn("[WARNING] Signed virus database updater", report)
 
 
 if __name__ == "__main__":

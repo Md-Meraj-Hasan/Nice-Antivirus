@@ -131,6 +131,28 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(rows[-1]["path"], "file-805")
             connection.close()
 
+    def test_file_header_extension_mismatch_is_manual_review_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            disguised = os.path.join(folder, "invoice.pdf")
+            with open(disguised, "wb") as stream:
+                stream.write(b"MZ" + b"sample executable header")
+            result = inspect_file(disguised, {})
+            self.assertEqual(result["status"], "no_match")
+            self.assertEqual(
+                result["file_type_review"]["code"],
+                "file_extension_mismatch",
+            )
+            self.assertIn("not proof of malware", result["file_type_review"]["note"])
+
+    def test_matching_file_header_does_not_raise_mismatch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image_path = os.path.join(folder, "photo.png")
+            with open(image_path, "wb") as stream:
+                stream.write(b"\\x89PNG\\r\\n\\x1a\\n" + b"sample image data")
+            result = inspect_file(image_path, {})
+            self.assertNotIn("file_type_review", result)
+            self.assertEqual(result["status"], "no_match")
+
     def test_unsigned_update_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "public key"):
             verify_signed_envelope({"manifest": {}, "signature": ""}, "")

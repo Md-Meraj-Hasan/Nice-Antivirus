@@ -148,7 +148,7 @@ class EngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             image_path = os.path.join(folder, "photo.png")
             with open(image_path, "wb") as stream:
-                stream.write(b"\\x89PNG\\r\\n\\x1a\\n" + b"sample image data")
+                stream.write(b"\x89PNG\r\n\x1a\n" + b"sample image data")
             result = inspect_file(image_path, {})
             self.assertNotIn("file_type_review", result)
             self.assertEqual(result["status"], "no_match")

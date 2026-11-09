@@ -6,6 +6,7 @@ No file is modified or deleted.
 """
 from pathlib import Path
 import hashlib
+import json
 from typing import Iterable
 from antivirus.database import connect, load_signatures, record_scan, recent_scans, clear_scan_history
 from antivirus.apk_analyzer import inspect_apk_container
@@ -159,7 +160,32 @@ def scan_local_file(path: str, db_path: str, display_path: str = "") -> str:
     connection = connect(db_path)
     try:
         result = inspect_file(path, load_signatures(connection))
-        record_scan(connection, display_path or Path(path).name, result.get("sha256"), result["status"])
+        review_items = []
+        for key, label in (
+            ("file_type_review", "File type"),
+            ("archive_review", "Archive"),
+            ("apk_review", "APK structure"),
+        ):
+            review = result.get(key)
+            if not isinstance(review, dict):
+                continue
+            indicators = review.get("review_indicators") or []
+            if review.get("status") not in {"review", "invalid_or_unreadable"} and not indicators:
+                continue
+            review_items.append({
+                "category": label,
+                "status": review.get("status", "review"),
+                "indicators": [
+                    {"code": item.get("code", "review"), "detail": item.get("detail", "")}
+                    for item in indicators if isinstance(item, dict)
+                ],
+                "detail": review.get("detail", ""),
+            })
+        review_summary = json.dumps(review_items, ensure_ascii=False, separators=(",", ":")) if review_items else ""
+        record_scan(
+            connection, display_path or Path(path).name, result.get("sha256"),
+            result["status"], review_summary,
+        )
     finally:
         connection.close()
     if result["status"] == "detected":
@@ -215,6 +241,22 @@ def scan_history_report(db_path: str, limit: int = 50) -> str:
             + "\n" + item["path"]
             + ("\nSHA-256: " + digest + "…" if digest else "")
         )
+        if item.get("review_summary"):
+            try:
+                reviews = json.loads(item["review_summary"])
+            except (TypeError, ValueError):
+                reviews = []
+            for review in reviews:
+                lines.append(
+                    "MANUAL REVIEW: " + str(review.get("category", "File review"))
+                    + " (" + str(review.get("status", "review")) + ")"
+                )
+                if review.get("detail"):
+                    lines.append(str(review["detail"]))
+                for indicator in review.get("indicators", []):
+                    if indicator.get("detail"):
+                        lines.append("- " + str(indicator["detail"]))
+                lines.append("Review indicators are not a malware verdict.")
     return "\n\n".join(lines)
 
 

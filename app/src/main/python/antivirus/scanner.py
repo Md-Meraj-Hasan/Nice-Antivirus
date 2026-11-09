@@ -1,12 +1,14 @@
 """Conservative local file analysis primitives.
 
-Only exact SHA-256 matches from the local database are detections. This is
-not a complete antivirus engine and no file is modified or deleted.
+Only exact SHA-256 matches from the local database are detections. APK
+container inspection is structural metadata review, not a malware verdict.
+No file is modified or deleted.
 """
 from pathlib import Path
 import hashlib
 from typing import Iterable
 from antivirus.database import connect, load_signatures
+from antivirus.apk_analyzer import inspect_apk_container
 
 
 def sha256_file(path: str, chunk_size: int = 1024 * 1024) -> str:
@@ -24,12 +26,15 @@ def inspect_file(path: str, signatures: dict[str, dict]) -> dict:
     try:
         file_hash = sha256_file(str(candidate))
         signature = signatures.get(file_hash)
-        return {
+        result = {
             "path": str(candidate),
             "sha256": file_hash,
             "status": "detected" if signature else "no_match",
             "threat": signature,
         }
+        if candidate.suffix.lower() == ".apk":
+            result["apk_review"] = inspect_apk_container(str(candidate))
+        return result
     except OSError as exc:
         return {"path": str(candidate), "status": "error", "reason": str(exc)}
 
@@ -46,10 +51,18 @@ def scan_local_file(path: str, db_path: str) -> str:
         connection.close()
     if result["status"] == "detected":
         threat = result.get("threat") or {}
-        return "THREAT MATCH: " + threat.get("label", "Unknown") + " (" + threat.get("severity", "unknown") + ")"
-    if result["status"] == "no_match":
-        return "No local signature match. SHA-256 " + result["sha256"][:16] + "…"
-    return result["status"].upper() + ": " + result.get("reason", "unknown")
+        report = "THREAT MATCH: " + threat.get("label", "Unknown") + " (" + threat.get("severity", "unknown") + ")"
+    elif result["status"] == "no_match":
+        report = "No local signature match. SHA-256 " + result["sha256"][:16] + "…"
+    else:
+        report = result["status"].upper() + ": " + result.get("reason", "unknown")
+    apk = result.get("apk_review")
+    if apk is not None:
+        report += "\nAPK container: " + apk.get("status", "unknown")
+        report += " | Manifest: " + ("yes" if apk.get("has_manifest") else "no")
+        report += " | DEX: " + ("yes" if apk.get("has_dex") else "no")
+        report += "\nNote: APK structure review is not a malware verdict."
+    return report
 
 
 def engine_self_check() -> str:
@@ -57,6 +70,7 @@ def engine_self_check() -> str:
     return (
         "Python engine: OK\n"
         + "SHA-256: OK (" + sample[:16] + "...)\n"
+        + "APK structure review: available\n"
         + "Detection mode: exact local signatures only\n"
         + "No files were changed."
     )

@@ -2,6 +2,8 @@ package com.meraj.niceantivirus
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.os.Bundle
 import android.graphics.Color
@@ -154,8 +156,9 @@ class MainActivity : Activity() {
                         temp.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw IllegalStateException("Cannot open selected document")
                     val result = python.callAttr("scan_local_file", temp.absolutePath, File(filesDir, "signatures.db").absolutePath).toString()
+                    val apkReview = if (name.endsWith(".apk", ignoreCase = true)) inspectApkPermissions(temp) else ""
                     if (result.startsWith("THREAT MATCH:")) threats++
-                    results.add(name + ": " + result)
+                    results.add(name + ": " + result + apkReview)
                     temp.delete()
                 } catch (error: Exception) {
                     results.add(uri.toString() + ": ERROR - " + (error.localizedMessage ?: "unreadable"))
@@ -169,6 +172,56 @@ class MainActivity : Activity() {
                     if (results.size > 40) "\n\n…and " + (results.size - 40) + " more items." else ""
                 scanCount.text = results.size.toString() + " files scanned  •  " + threats + " threat matches"
             }
+        }
+    }
+
+
+    @Suppress("DEPRECATION")
+    private fun inspectApkPermissions(apkFile: File): String {
+        return try {
+            val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES
+            val info = if (Build.VERSION.SDK_INT >= 33) {
+                packageManager.getPackageArchiveInfo(apkFile.absolutePath,
+                    PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            } ?: return "\nAPK permission review: manifest could not be parsed by Android."
+            val permissions = info.requestedPermissions?.toList().orEmpty()
+            val sensitive = mapOf(
+                "android.permission.READ_SMS" to "SMS reading",
+                "android.permission.RECEIVE_SMS" to "SMS receiving",
+                "android.permission.SEND_SMS" to "SMS sending",
+                "android.permission.READ_CONTACTS" to "Contacts access",
+                "android.permission.READ_CALL_LOG" to "Call-log access",
+                "android.permission.RECORD_AUDIO" to "Microphone recording",
+                "android.permission.CAMERA" to "Camera access",
+                "android.permission.ACCESS_FINE_LOCATION" to "Precise location",
+                "android.permission.ACCESS_BACKGROUND_LOCATION" to "Background location",
+                "android.permission.REQUEST_INSTALL_PACKAGES" to "Installing other APKs",
+                "android.permission.SYSTEM_ALERT_WINDOW" to "Draw over other apps",
+                "android.permission.READ_PHONE_STATE" to "Phone-state access"
+            )
+            val risky = permissions.mapNotNull { permission ->
+                sensitive[permission]?.let { it + " (" + permission.substringAfterLast('.') + ")" }
+            }
+            val serviceWarnings = info.services?.filter {
+                it.permission == "android.permission.BIND_ACCESSIBILITY_SERVICE" ||
+                    it.permission == "android.permission.BIND_DEVICE_ADMIN"
+            }?.map { it.permission ?: "special service" }.orEmpty()
+            val output = StringBuilder("\nAPK permission review: ")
+            output.append(permissions.size).append(" declared permission(s).")
+            if (risky.isNotEmpty()) {
+                output.append("\nSensitive permissions: ").append(risky.joinToString(", "))
+            } else {
+                output.append("\nNo permissions from the app's sensitive-permission watchlist.")
+            }
+            if (serviceWarnings.isNotEmpty()) {
+                output.append("\nSpecial service declarations: ").append(serviceWarnings.distinct().joinToString(", "))
+            }
+            output.append("\nNote: permissions indicate capability, not proof of malicious behavior.")
+            output.toString()
+        } catch (error: Exception) {
+            "\nAPK permission review unavailable: " + (error.localizedMessage ?: "parse error")
         }
     }
 

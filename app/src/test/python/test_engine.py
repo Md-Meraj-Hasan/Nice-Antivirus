@@ -153,6 +153,31 @@ class EngineTests(unittest.TestCase):
             self.assertNotIn("file_type_review", result)
             self.assertEqual(result["status"], "no_match")
 
+    def test_zip_archive_traversal_is_flagged_without_extraction(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "sample.zip")
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("../outside.txt", b"sample")
+                archive.writestr("safe.txt", b"safe")
+            result = inspect_file(path, {})
+            self.assertEqual(result["status"], "no_match")
+            review = result["archive_review"]
+            self.assertEqual(review["status"], "review")
+            self.assertIn(
+                "path_traversal_names",
+                [item["code"] for item in review["review_indicators"]],
+            )
+            self.assertIn("no extraction", review["note"].lower())
+
+    def test_normal_zip_has_no_archive_review_flags(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "normal.zip")
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("docs/readme.txt", b"hello")
+            result = inspect_file(path, {})
+            self.assertEqual(result["archive_review"]["status"], "no_structural_flags")
+            self.assertEqual(result["archive_review"]["review_indicators"], [])
+
     def test_unsigned_update_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "public key"):
             verify_signed_envelope({"manifest": {}, "signature": ""}, "")

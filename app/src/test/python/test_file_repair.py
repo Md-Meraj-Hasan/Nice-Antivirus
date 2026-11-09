@@ -109,5 +109,27 @@ class FileRepairTests(unittest.TestCase):
         self.assertNotIn(b"\\n%%EOF", repaired)
 
 
+    def test_corrupt_zip_recovers_good_entries_and_reports_skipped(self):
+        source = os.path.join(self.root, "damaged.zip")
+        with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr("good.txt", b"good payload")
+            archive.writestr("bad.txt", b"bad payload")
+        with open(source, "r+b") as stream:
+            data = stream.read()
+            position = data.index(b"bad payload")
+            stream.seek(position)
+            stream.write(b"BAD payload")
+        result = repair_file(source, os.path.join(self.root, "out"))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "partial_recovery")
+        self.assertEqual(result["recovered_entries"], 1)
+        self.assertEqual(result["skipped_entries"], 1)
+        with zipfile.ZipFile(result["output_path"], "r") as recovered:
+            self.assertEqual(recovered.read("good.txt"), b"good payload")
+            self.assertNotIn("bad.txt", recovered.namelist())
+        with zipfile.ZipFile(source, "r") as original:
+            self.assertIn("bad.txt", original.namelist())
+
+
 if __name__ == "__main__":
     unittest.main()

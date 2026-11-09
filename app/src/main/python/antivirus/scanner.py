@@ -79,8 +79,8 @@ def inspect_archive_safety(path: str) -> dict | None:
                                    "detail": "Archive contains more than 10,000 entries."})
             traversal = [
                 name for name in names
-                if name.startswith(("/", "\\\\"))
-                or any(part == ".." for part in name.replace("\\\\", "/").split("/"))
+                if name.startswith("/") or name.startswith(chr(92))
+                or any(part == ".." for part in name.replace(chr(92), "/").split("/"))
             ]
             if traversal:
                 indicators.append({"code": "path_traversal_names", "count": len(traversal),
